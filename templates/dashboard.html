@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Choose Your Seed - Rabbithole Music{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-6 py-10">
+  <h1 class="text-4xl font-black mb-2">What's your starting point?</h1>
+  <p class="text-gray-400 mb-10">Pick a playlist or your liked songs — we'll use it to find music you've never heard.</p>
+
+  <form method="POST" action="/generate/start">
+    <!-- Liked Songs option -->
+    <div class="mb-8">
+      <h2 class="text-xl font-bold mb-4 text-gray-300">Your Library</h2>
+      <button type="submit" name="seed_type" value="liked"
+              onclick="document.querySelector('[name=seed_name]').value='Liked Songs'"
+              class="w-full card p-4 flex items-center gap-4 cursor-pointer text-left hover:border hover:border-green-500 transition group">
+        <div class="w-16 h-16 rounded flex items-center justify-center flex-shrink-0" style="background: linear-gradient(135deg, #450af5, #c4efd9)">
+          <svg viewBox="0 0 24 24" class="w-8 h-8 fill-white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        </div>
+        <div>
+          <div class="font-bold text-lg">Liked Songs</div>
+          <div class="text-gray-400 text-sm">Use your entire saved library as the seed</div>
+        </div>
+        <div class="ml-auto text-green-500 opacity-0 group-hover:opacity-100 transition">
+          <svg viewBox="0 0 24 24" class="w-6 h-6 fill-current"><path d="M8 5v14l11-7z"/></svg>
+        </div>
+      </button>
+    </div>
+
+    <!-- Playlist grid -->
+    <div>
+      <h2 class="text-xl font-bold mb-4 text-gray-300">Your Playlists</h2>
+      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        {% for p in playlists %}
+        <button type="submit" name="seed_type" value="{{ p.id }}"
+                onclick="document.querySelector('[name=seed_name]').value='{{ p.name|replace(\"'\", \"\\'\") }}'"
+                class="card p-4 text-left cursor-pointer hover:border hover:border-green-500 transition group">
+          {% if p.image %}
+            <img src="{{ p.image }}" class="w-full aspect-square object-cover rounded mb-3">
+          {% else %}
+            <div class="w-full aspect-square rounded mb-3 flex items-center justify-center" style="background:#282828">
+              <svg viewBox="0 0 24 24" class="w-12 h-12 fill-gray-600"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            </div>
+          {% endif %}
+          <div class="font-semibold text-sm truncate">{{ p.name }}</div>
+          <div class="text-gray-500 text-xs mt-1">{{ p.track_count }} tracks</div>
+        </button>
+        {% endfor %}
+      </div>
+    </div>
+    <input type="hidden" name="seed_name" value="Liked Songs">
+  </form>
+</div>
+{% endblock %}

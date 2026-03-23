@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Finding Your Music...{% endblock %}
+{% block content %}
+<div class="flex flex-col items-center justify-center min-h-[80vh] text-center px-6">
+  <div id="spinner" class="mb-8">
+    <div class="w-20 h-20 border-4 border-dark-700 border-t-green-500 rounded-full animate-spin mx-auto"></div>
+  </div>
+  <h1 class="text-3xl font-black mb-3" id="status-title">Going Down The Rabbithole...</h1>
+  <p class="text-gray-400 text-lg" id="status-msg">Sampling your library and searching for similar artists via Last.fm</p>
+  <div class="mt-8 w-80 bg-dark-700 rounded-full h-2">
+    <div id="progress-bar" class="bg-green-500 h-2 rounded-full transition-all duration-500" style="width: 5%"></div>
+  </div>
+  <p class="text-gray-600 text-sm mt-4">This usually takes 20–40 seconds</p>
+
+  <div id="error-box" class="hidden mt-8 p-4 bg-red-900 rounded-lg text-red-200 max-w-md">
+    <p class="font-bold mb-1">Something went wrong</p>
+    <p id="error-msg" class="text-sm"></p>
+    <a href="/dashboard" class="btn-outline text-sm mt-4 inline-block">Try again</a>
+  </div>
+</div>
+<script>
+  var jobId = "{{ job_id }}";
+  var progress = 5;
+  var pollCount = 0;
+
+  function poll() {
+    fetch("/generate/poll/" + jobId)
+      .then(r => r.json())
+      .then(data => {
+        pollCount++;
+        if (data.status === "done") {
+          document.getElementById("progress-bar").style.width = "100%";
+          document.getElementById("status-title").textContent = "Found it!";
+          document.getElementById("status-msg").textContent = "Your playlist is ready";
+          setTimeout(() => { window.location = data.redirect; }, 800);
+        } else if (data.status === "error") {
+          document.getElementById("spinner").classList.add("hidden");
+          document.getElementById("error-box").classList.remove("hidden");
+          document.getElementById("error-msg").textContent = data.message;
+        } else {
+          // Simulate progress
+          progress = Math.min(90, progress + (pollCount < 3 ? 15 : 5));
+          document.getElementById("progress-bar").style.width = progress + "%";
+          setTimeout(poll, 2500);
+        }
+      })
+      .catch(() => setTimeout(poll, 3000));
+  }
+  setTimeout(poll, 1000);
+</script>
+{% endblock %}

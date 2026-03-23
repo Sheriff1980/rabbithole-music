@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - Rabbithole Music{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-6 py-10">
+  <div class="flex items-start justify-between mb-8 flex-wrap gap-4">
+    <div>
+      <p class="text-green-500 font-semibold text-sm uppercase tracking-widest mb-2">Your Discovery Playlist</p>
+      <h1 class="text-4xl font-black mb-2">{{ title }}</h1>
+      <p class="text-gray-400">{{ tracks|length }} tracks from artists you've never heard — but should have.</p>
+    </div>
+    <div class="flex gap-3 flex-wrap">
+      {% if not spotify_id %}
+      <button onclick="pushToSpotify()" id="push-btn" class="btn-green">
+        Add to Spotify
+      </button>
+      {% else %}
+      <a href="https://open.spotify.com/playlist/{{ spotify_id }}" target="_blank" class="btn-green">
+        Open in Spotify
+      </a>
+      {% endif %}
+      {% if not is_published %}
+      <button onclick="publishPlaylist()" id="publish-btn" class="btn-outline">
+        Share with Community
+      </button>
+      {% else %}
+      <span class="btn-outline opacity-50 cursor-default">Shared ✓</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="push-status" class="hidden mb-4 p-3 bg-green-900 text-green-200 rounded-lg text-sm"></div>
+
+  <div class="space-y-2">
+    {% for track in tracks %}
+    <div class="card p-4 flex items-center gap-4">
+      {% if track.album_art %}
+        <img src="{{ track.album_art }}" class="w-12 h-12 rounded flex-shrink-0">
+      {% else %}
+        <div class="w-12 h-12 rounded bg-dark-700 flex-shrink-0"></div>
+      {% endif %}
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold truncate">{{ track.name or track.track }}</div>
+        <div class="text-gray-400 text-sm truncate">{{ track.artist }} · {{ track.album or '' }}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+var playlistId = "{{ playlist_id }}";
+
+function pushToSpotify() {
+  var btn = document.getElementById("push-btn");
+  btn.textContent = "Adding...";
+  btn.disabled = true;
+  fetch("/generate/push/" + playlistId, { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        btn.textContent = "Open in Spotify";
+        btn.onclick = () => window.open(data.url, "_blank");
+        btn.disabled = false;
+        var s = document.getElementById("push-status");
+        s.classList.remove("hidden");
+        s.textContent = "Added to your Spotify! Click 'Open in Spotify' to listen.";
+      }
+    });
+}
+
+function publishPlaylist() {
+  var btn = document.getElementById("publish-btn");
+  btn.textContent = "Sharing...";
+  btn.disabled = true;
+  fetch("/generate/publish/" + playlistId, { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        btn.textContent = "Shared with Community ✓";
+        btn.classList.add("opacity-50");
+      }
+    });
+}
+</script>
+{% endblock %}

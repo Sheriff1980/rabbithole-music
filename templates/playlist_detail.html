@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}{{ playlist.title }} - Rabbithole Music{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-6 py-10">
+  <a href="/community" class="text-gray-500 hover:text-white text-sm mb-6 inline-flex items-center gap-1">
+    <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+    Back to Community
+  </a>
+
+  <div class="flex items-start justify-between mb-8 flex-wrap gap-4">
+    <div>
+      <p class="text-green-500 font-semibold text-sm uppercase tracking-widest mb-2">Community Playlist</p>
+      <h1 class="text-4xl font-black mb-2">{{ playlist.title }}</h1>
+      <p class="text-gray-400">by {{ playlist.creator }} · seeded from "{{ playlist.seed_name }}"</p>
+    </div>
+    <div class="flex items-center gap-4">
+      <!-- Playlist vote -->
+      <div class="flex items-center gap-2 card px-4 py-3">
+        <button onclick="votePlaylist(1)" id="pv-up"
+                class="w-9 h-9 rounded-full flex items-center justify-center transition hover:bg-green-500 hover:text-black {{ 'bg-green-500 text-black' if user_playlist_vote == 1 else 'bg-dark-700 text-gray-400' }}">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+        </button>
+        <span class="font-bold text-lg" id="pv-score">{{ playlist.upvotes - playlist.downvotes }}</span>
+        <button onclick="votePlaylist(-1)" id="pv-down"
+                class="w-9 h-9 rounded-full flex items-center justify-center transition hover:bg-red-500 hover:text-white {{ 'bg-red-500 text-white' if user_playlist_vote == -1 else 'bg-dark-700 text-gray-400' }}">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M12 20l8-8h-5V4H9v8H4z"/></svg>
+        </button>
+      </div>
+      {% if session.user_id %}
+      <button onclick="importPlaylist(this)" class="btn-green">Import to Spotify</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="space-y-2">
+    {% for track in tracks %}
+    <div class="card p-4 flex items-center gap-4" id="track-{{ loop.index }}">
+      {% if track.album_art %}
+        <img src="{{ track.album_art }}" class="w-12 h-12 rounded flex-shrink-0">
+      {% else %}
+        <div class="w-12 h-12 rounded bg-dark-700 flex-shrink-0"></div>
+      {% endif %}
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold truncate">{{ track.name or track.track }}</div>
+        <div class="text-gray-400 text-sm truncate">{{ track.artist }} · {{ track.album or '' }}</div>
+      </div>
+      {% if session.user_id %}
+      <div class="flex items-center gap-2 flex-shrink-0">
+        {% set tv = user_track_votes.get(track.uri, 0) %}
+        {% set ts = track_scores.get(track.uri, 0) %}
+        <button onclick="trackVote('{{ track.uri }}', 1, this)"
+                class="track-vote-btn w-8 h-8 rounded-full flex items-center justify-center text-xs transition hover:bg-green-500 hover:text-black {{ 'bg-green-500 text-black' if tv == 1 else 'bg-dark-700 text-gray-500' }}">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+        </button>
+        <span class="text-xs text-gray-500 w-6 text-center track-score" data-uri="{{ track.uri }}">{{ ts or '' }}</span>
+        <button onclick="trackVote('{{ track.uri }}', -1, this)"
+                class="track-vote-btn w-8 h-8 rounded-full flex items-center justify-center text-xs transition hover:bg-red-500 hover:text-white {{ 'bg-red-500 text-white' if tv == -1 else 'bg-dark-700 text-gray-500' }}">
+          <svg viewBox="0 0 24 24" class="w-4 h-4 fill-current"><path d="M12 20l8-8h-5V4H9v8H4z"/></svg>
+        </button>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 bg-green-500 text-black font-bold px-6 py-3 rounded-full shadow-lg z-50"></div>
+
+<script>
+var playlistId = "{{ playlist.id }}";
+
+function showToast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  setTimeout(() => t.classList.add("hidden"), 3000);
+}
+
+function votePlaylist(val) {
+  {% if not session.user_id %} window.location="/auth/login"; return; {% endif %}
+  fetch("/community/vote/" + playlistId, {
+    method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({vote: val})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok) document.getElementById("pv-score").textContent = d.upvotes - d.downvotes;
+  });
+}
+
+function trackVote(uri, val, btn) {
+  {% if not session.user_id %} window.location="/auth/login"; return; {% endif %}
+  fetch("/community/track-vote/" + playlistId + "/" + encodeURIComponent(uri), {
+    method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({vote: val})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok) {
+      document.querySelector(".track-score[data-uri='" + uri + "']").textContent = d.score || '';
+    }
+  });
+}
+
+function importPlaylist(btn) {
+  btn.textContent = "Importing...";
+  btn.disabled = true;
+  fetch("/community/import/" + playlistId, {method:"POST"})
+    .then(r=>r.json()).then(d=>{
+      if(d.ok) { showToast("Added to your Spotify!"); btn.textContent = "Imported ✓"; }
+    });
+}
+</script>
+{% endblock %}

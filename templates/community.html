@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Community Playlists - Rabbithole Music{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto px-6 py-10">
+  <h1 class="text-4xl font-black mb-2">Community Playlists</h1>
+  <p class="text-gray-400 mb-10">Playlists shared by the community — vote for the ones that go deepest.</p>
+
+  {% if not playlists %}
+  <div class="text-center py-20 text-gray-600">
+    <p class="text-xl mb-4">No community playlists yet.</p>
+    <p>Be the first — <a href="/dashboard" class="text-green-500 hover:underline">generate a playlist</a> and share it!</p>
+  </div>
+  {% endif %}
+
+  <div class="space-y-4">
+    {% for p in playlists %}
+    <div class="card p-6 flex gap-6">
+      <!-- Vote buttons -->
+      <div class="flex flex-col items-center gap-1 flex-shrink-0">
+        <button onclick="vote('{{ p.id }}', 1, this)"
+                class="vote-btn w-10 h-10 rounded-full flex items-center justify-center transition hover:bg-green-500 hover:text-black {{ 'bg-green-500 text-black' if user_votes.get(p.id) == 1 else 'bg-dark-700 text-gray-400' }}"
+                data-playlist="{{ p.id }}" data-direction="up">
+          <svg viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M12 4l-8 8h5v8h6v-8h5z"/></svg>
+        </button>
+        <span class="text-sm font-bold text-gray-300" id="score-{{ p.id }}">{{ p.upvotes - p.downvotes }}</span>
+        <button onclick="vote('{{ p.id }}', -1, this)"
+                class="vote-btn w-10 h-10 rounded-full flex items-center justify-center transition hover:bg-red-500 hover:text-white {{ 'bg-red-500 text-white' if user_votes.get(p.id) == -1 else 'bg-dark-700 text-gray-400' }}"
+                data-playlist="{{ p.id }}" data-direction="down">
+          <svg viewBox="0 0 24 24" class="w-5 h-5 fill-current"><path d="M12 20l8-8h-5V4H9v8H4z"/></svg>
+        </button>
+      </div>
+
+      <!-- Content -->
+      <div class="flex-1 min-w-0">
+        <a href="/community/playlist/{{ p.id }}" class="hover:text-green-500 transition">
+          <h2 class="text-xl font-bold mb-1 truncate">{{ p.title }}</h2>
+        </a>
+        <p class="text-gray-500 text-sm mb-3">by {{ p.creator }} · {{ p.track_count }} tracks · seeded from "{{ p.seed_name }}"</p>
+        <div class="flex gap-2 flex-wrap">
+          {% for t in p.preview_tracks[:3] %}
+          <span class="bg-dark-700 text-gray-300 text-xs px-3 py-1 rounded-full">{{ t.artist }} – {{ t.name or t.track }}</span>
+          {% endfor %}
+          {% if p.track_count > 3 %}
+          <span class="text-gray-600 text-xs px-3 py-1">+{{ p.track_count - 3 }} more</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex flex-col gap-2 flex-shrink-0">
+        <a href="/community/playlist/{{ p.id }}" class="btn-outline text-sm text-center py-2 px-4">View</a>
+        {% if session.user_id %}
+        <button onclick="importPlaylist('{{ p.id }}', this)" class="btn-green text-sm py-2 px-4">Import</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 bg-green-500 text-black font-bold px-6 py-3 rounded-full shadow-lg z-50"></div>
+
+<script>
+function showToast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  setTimeout(() => t.classList.add("hidden"), 3000);
+}
+
+function vote(playlistId, voteVal, btn) {
+  {% if not session.user_id %}
+  window.location = "/auth/login";
+  return;
+  {% endif %}
+  fetch("/community/vote/" + playlistId, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({vote: voteVal})
+  }).then(r => r.json()).then(data => {
+    if (data.ok) {
+      document.getElementById("score-" + playlistId).textContent = data.upvotes - data.downvotes;
+    }
+  });
+}
+
+function importPlaylist(playlistId, btn) {
+  btn.textContent = "Importing...";
+  btn.disabled = true;
+  fetch("/community/import/" + playlistId, { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        showToast("Added to your Spotify!");
+        btn.textContent = "Imported ✓";
+      }
+    });
+}
+</script>
+{% endblock %}

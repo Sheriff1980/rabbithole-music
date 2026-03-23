@@ -1,0 +1,66 @@
+import os
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///rabbithole.db")
+
+# For SQLite use check_same_thread=False
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
+
+def init_db():
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                avatar_url TEXT,
+                access_token TEXT NOT NULL,
+                refresh_token TEXT NOT NULL,
+                token_expires_at INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS playlists (
+                id TEXT PRIMARY KEY,
+                owner_id TEXT REFERENCES users(id),
+                spotify_playlist_id TEXT,
+                title TEXT NOT NULL,
+                seed_type TEXT NOT NULL,
+                seed_name TEXT,
+                is_published INTEGER DEFAULT 0,
+                published_at TIMESTAMP,
+                track_data TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
+                upvotes INTEGER DEFAULT 0,
+                downvotes INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS playlist_votes (
+                user_id TEXT,
+                playlist_id TEXT,
+                vote INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, playlist_id)
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS track_votes (
+                id TEXT PRIMARY KEY,
+                user_id TEXT,
+                playlist_id TEXT,
+                track_uri TEXT NOT NULL,
+                vote INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (user_id, playlist_id, track_uri)
+            )
+        """))
+        conn.commit()
+
+def get_conn():
+    return engine.connect()
