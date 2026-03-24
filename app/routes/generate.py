@@ -7,7 +7,7 @@ from ..auth import get_spotify_client
 from ..models import get_conn, engine
 from ..discover import run_discovery, get_genre_seed_artists
 from ..playlist import (get_liked_artists_and_tracks, get_playlist_artists_and_tracks,
-                         search_artist_tracks, search_track, push_to_spotify)
+                         search_artist_tracks, search_track, push_to_spotify, dedup_playlist)
 from ..models import engine as db_engine
 from ..utils import csrf_required, decrypt_token
 from ..limiter import limiter
@@ -127,6 +127,9 @@ def run_discovery_background(job_id, user_id, seed_type, access_token,
             for t in own_deep:
                 if t.get("uri") not in existing_uris:
                     found.insert(0, t)
+
+        # Final dedup pass across the entire playlist
+        found = dedup_playlist(found)
 
         set_progress(job_id, 95, "Almost done...")
         with engine.connect() as conn:

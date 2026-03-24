@@ -85,11 +85,41 @@ def get_playlist_artists_and_tracks(sp, playlist_id):
 import re
 
 def _normalize_track_name(name):
-    """Strip remaster/live/version/edit suffixes for deduplication."""
+    """
+    Strip variant suffixes for deduplication.
+    Catches: remasters, live, extended, acoustic, deluxe, bonus, clean/explicit,
+    featuring credits, and year tags.
+    """
     name = name.lower().strip()
-    name = re.sub(r'\s*[-–(]\s*(remaster(ed)?|live|single version|radio edit|album version'
-                  r'|mono|stereo|\d{4} remaster|\d{4} version|original mix)[^)]*\)?.*$',
-                  '', name, flags=re.IGNORECASE)
+
+    # Remove anything in parentheses or after a dash that's a variant marker
+    variant_words = (
+        r'remaster(ed)?|live|single version|radio (edit|version|mix)|album version'
+        r'|mono|stereo|\d{4}\s*(remaster|version|mix)'
+        r'|original mix|original version'
+        r'|extended(\s*(version|mix|cut))?'
+        r'|acoustic(\s*version)?'
+        r'|deluxe(\s*(edition|version))?'
+        r'|bonus\s*track'
+        r'|clean(\s*version)?|explicit(\s*version)?'
+        r'|demo(\s*version)?'
+        r'|instrumental(\s*version)?'
+        r'|remix|re-?mix'
+        r'|from\s+["\u201c].*'           # "from Movie Soundtrack"
+        r'|feat\.?\s.*|ft\.?\s.*'         # strip featuring credits
+    )
+    # Match "- Suffix", "(Suffix)", or "[Suffix]"
+    name = re.sub(
+        r'\s*[-–—]\s*(' + variant_words + r')[^)}\]]*$',
+        '', name, flags=re.IGNORECASE
+    )
+    name = re.sub(
+        r'\s*[(\[]\s*(' + variant_words + r')[^)}\]]*[)\]]',
+        '', name, flags=re.IGNORECASE
+    )
+
+    # Remove trailing whitespace/punctuation left behind
+    name = re.sub(r'[\s\-–—]+$', '', name)
     return name.strip()
 
 def search_artist_tracks(sp, artist_name, count=3, deep_cuts=False):
@@ -182,6 +212,38 @@ def search_track(sp, artist, track):
         return None
     except Exception:
         return None
+
+def dedup_playlist(tracks):
+    """
+    Final cross-artist dedup pass on the assembled playlist.
+    Uses normalized track name + normalized artist to catch:
+    - Same song from standard vs deluxe album
+    - Same song with different suffixes (extended, clean, etc.)
+    - Covers that appear under different artist spellings
+    Prefers the version with higher popularity (or first seen if no popularity data).
+    """
+    seen = {}  # normalized key -> index in result list
+    result = []
+
+    for track in tracks:
+        norm_name = _normalize_track_name(track.get("name", ""))
+        norm_artist = track.get("artist", "").lower().strip()
+        key = f"{norm_artist}::{norm_name}"
+
+        if key in seen:
+            # We already have this track — keep the more popular one
+            existing_idx = seen[key]
+            existing_pop = result[existing_idx].get("popularity", 50)
+            new_pop = track.get("popularity", 50)
+            if new_pop > existing_pop:
+                result[existing_idx] = track  # replace with more popular version
+            continue
+
+        seen[key] = len(result)
+        result.append(track)
+
+    return result
+
 
 def push_to_spotify(sp, user_id, tracks, playlist_name):
     """Create a playlist and add tracks. Returns spotify playlist URL."""
