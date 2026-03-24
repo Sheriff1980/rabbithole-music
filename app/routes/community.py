@@ -4,6 +4,8 @@ from flask import Blueprint, render_template, request, session, redirect, url_fo
 from ..auth import get_spotify_client
 from ..models import get_conn
 from ..playlist import push_to_spotify
+from ..utils import csrf_required
+from ..limiter import limiter
 from sqlalchemy import text
 
 community_bp = Blueprint("community", __name__)
@@ -91,11 +93,16 @@ def detail(playlist_id):
                            user_track_votes=user_track_votes)
 
 @community_bp.route("/vote/<playlist_id>", methods=["POST"])
+@csrf_required
+@limiter.limit("60 per minute")
 def vote(playlist_id):
     if "user_id" not in session:
         return jsonify({"error": "Login required"})
 
-    vote_val = int(request.json.get("vote", 1))
+    raw = request.json.get("vote", 1) if request.json else 1
+    vote_val = int(raw)
+    if vote_val not in (1, -1):
+        return jsonify({"error": "Invalid vote value"}), 400
     uid = session["user_id"]
 
     with get_conn() as conn:
@@ -135,11 +142,16 @@ def vote(playlist_id):
     return jsonify({"ok": True, "upvotes": updated[0], "downvotes": updated[1]})
 
 @community_bp.route("/track-vote/<playlist_id>/<path:track_uri>", methods=["POST"])
+@csrf_required
+@limiter.limit("60 per minute")
 def track_vote(playlist_id, track_uri):
     if "user_id" not in session:
         return jsonify({"error": "Login required"})
 
-    vote_val = int(request.json.get("vote", 1))
+    raw = request.json.get("vote", 1) if request.json else 1
+    vote_val = int(raw)
+    if vote_val not in (1, -1):
+        return jsonify({"error": "Invalid vote value"}), 400
     uid = session["user_id"]
 
     with get_conn() as conn:
@@ -157,6 +169,7 @@ def track_vote(playlist_id, track_uri):
     return jsonify({"ok": True, "score": score[0] or 0})
 
 @community_bp.route("/import/<playlist_id>", methods=["POST"])
+@csrf_required
 def import_playlist(playlist_id):
     if "user_id" not in session:
         return jsonify({"error": "Login required"})

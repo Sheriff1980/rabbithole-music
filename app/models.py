@@ -20,6 +20,8 @@ def init_db():
                 access_token TEXT NOT NULL,
                 refresh_token TEXT NOT NULL,
                 token_expires_at INTEGER NOT NULL,
+                liked_cache TEXT,
+                liked_cache_at INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
@@ -35,8 +37,15 @@ def init_db():
                 published_at TIMESTAMP,
                 track_data TEXT NOT NULL,
                 status TEXT DEFAULT 'pending',
+                progress INTEGER DEFAULT 0,
+                progress_msg TEXT DEFAULT 'Starting...',
+                excluded_genres TEXT DEFAULT '',
+                playlist_size INTEGER DEFAULT 60,
+                adventurousness INTEGER DEFAULT 3,
+                genre_spread INTEGER DEFAULT 3,
                 upvotes INTEGER DEFAULT 0,
                 downvotes INTEGER DEFAULT 0,
+                auto_refresh INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """))
@@ -58,6 +67,17 @@ def init_db():
                 vote INTEGER NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (user_id, playlist_id, track_uri)
+            )
+        """))
+        # Per-user thumbs up / down on individual tracks (result page)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS track_feedback (
+                user_id TEXT NOT NULL,
+                artist  TEXT NOT NULL,
+                track_name TEXT NOT NULL,
+                feedback INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, artist, track_name)
             )
         """))
         conn.commit()

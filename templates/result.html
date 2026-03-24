@@ -1,14 +1,23 @@
 {% extends "base.html" %}
 {% block title %}{{ title }} - Rabbithole Music{% endblock %}
 {% block content %}
+
+<!-- Hidden audio player -->
+<audio id="preview-audio" preload="none"></audio>
+
 <div class="max-w-4xl mx-auto px-6 py-10">
+
+  <!-- Header -->
   <div class="flex items-start justify-between mb-8 flex-wrap gap-4">
     <div>
       <p class="text-green-500 font-semibold text-sm uppercase tracking-widest mb-2">Your Discovery Playlist</p>
       <h1 class="text-4xl font-black mb-2">{{ title }}</h1>
-      <p class="text-gray-400">{{ tracks|length }} tracks from artists you've never heard — but should have.</p>
+      <p class="text-gray-400" id="track-count">{{ tracks|length }} tracks · drag to reorder · 👍👎 to teach the algorithm</p>
     </div>
     <div class="flex gap-3 flex-wrap">
+      <button onclick="reroll()" class="btn-outline" title="Keep same seed, generate a fresh batch">
+        ↺ Re-roll
+      </button>
       {% if not spotify_id %}
       <button onclick="pushToSpotify()" id="push-btn" class="btn-green">
         Add to Spotify
@@ -30,31 +39,269 @@
 
   <div id="push-status" class="hidden mb-4 p-3 bg-green-900 text-green-200 rounded-lg text-sm"></div>
 
-  <div class="space-y-2">
+  <!-- Algorithm tip -->
+  <p class="text-xs text-gray-500 mb-3">
+    <span class="text-green-400 font-semibold">Train the algorithm:</span>
+    👍 great pick &nbsp;·&nbsp; 👎 skip this forever &nbsp;·&nbsp; <span class="text-blue-400 font-bold">＋</span> dig deeper into that artist
+  </p>
+
+  <!-- Track list -->
+  <div id="track-list" class="space-y-2">
     {% for track in tracks %}
-    <div class="card p-4 flex items-center gap-4">
+    <div class="track-card card p-3 flex items-center gap-3 group transition"
+         data-uri="{{ track.uri }}"
+         data-artist="{{ track.artist }}"
+         data-track="{{ track.name or track.track }}"
+         data-preview=""
+         draggable="true">
+
+      <!-- Drag handle -->
+      <div class="drag-handle cursor-grab text-gray-600 hover:text-gray-400 flex-shrink-0 px-1 select-none"
+           title="Drag to reorder">⠿</div>
+
+      <!-- Album art -->
       {% if track.album_art %}
-        <img src="{{ track.album_art }}" class="w-12 h-12 rounded flex-shrink-0">
+        <img src="{{ track.album_art }}" class="w-12 h-12 rounded flex-shrink-0 object-cover">
       {% else %}
-        <div class="w-12 h-12 rounded bg-dark-700 flex-shrink-0"></div>
+        <div class="w-12 h-12 rounded bg-gray-800 flex-shrink-0"></div>
       {% endif %}
+
+      <!-- Play preview button -->
+      <button class="preview-btn flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition hover:text-green-400"
+              onclick="togglePreview(this)">
+        <span class="play-icon text-lg">▶</span>
+      </button>
+
+      <!-- Track info -->
       <div class="flex-1 min-w-0">
         <div class="font-semibold truncate">{{ track.name or track.track }}</div>
         <div class="text-gray-400 text-sm truncate">{{ track.artist }} · {{ track.album or '' }}</div>
       </div>
+
+      <!-- Thumbs + More like this -->
+      <div class="flex gap-1 flex-shrink-0">
+        <button class="thumb-btn thumb-up w-8 h-8 rounded-full flex items-center justify-center hover:bg-green-900 transition text-lg"
+                onclick="vote(this, 1)" title="Love it — more like this">👍</button>
+        <button class="thumb-btn thumb-down w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-900 transition text-lg"
+                onclick="vote(this, -1)" title="Not for me — less like this">👎</button>
+        <button class="more-like-btn w-8 h-8 rounded-full flex items-center justify-center hover:bg-blue-900 transition text-sm font-bold text-blue-400"
+                onclick="morelikethis(this)" title="More like this artist">＋</button>
+      </div>
     </div>
     {% endfor %}
+  </div>
+
+  <!-- Preview progress bar -->
+  <div id="now-playing" class="hidden fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-700 px-6 py-3 flex items-center gap-4 z-50">
+    <div id="np-art" class="w-10 h-10 rounded bg-gray-700 flex-shrink-0 overflow-hidden">
+      <img id="np-art-img" class="w-full h-full object-cover hidden">
+    </div>
+    <div class="flex-1 min-w-0">
+      <div id="np-title" class="text-sm font-semibold truncate"></div>
+      <div id="np-artist" class="text-xs text-gray-400 truncate"></div>
+    </div>
+    <div class="flex-1 max-w-xs">
+      <div class="h-1 bg-gray-700 rounded-full overflow-hidden">
+        <div id="np-progress" class="h-full bg-green-500 rounded-full transition-all" style="width:0%"></div>
+      </div>
+    </div>
+    <!-- Volume -->
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <span class="text-gray-400 text-sm">🔊</span>
+      <input type="range" id="volume-slider" min="0" max="100" value="50"
+             oninput="setVolume(this.value)"
+             class="w-24 accent-green-500 cursor-pointer">
+    </div>
+    <button onclick="stopPreview()" class="text-gray-400 hover:text-white text-xl flex-shrink-0">■</button>
   </div>
 </div>
 
 <script>
 var playlistId = "{{ playlist_id }}";
+var currentBtn = null;
+var audio = document.getElementById("preview-audio");
+var progressInterval = null;
+audio.volume = 0.5; // start at 50%
+
+function setVolume(val) {
+  audio.volume = val / 100;
+}
+
+// ── Preview player ────────────────────────────────────────────────────────────
+
+function togglePreview(btn) {
+  var card = btn.closest(".track-card");
+
+  // Already playing this one — pause it
+  if (currentBtn === btn && !audio.paused) {
+    stopPreview();
+    return;
+  }
+
+  // Stop whatever is currently playing
+  if (currentBtn) resetBtn(currentBtn);
+  stopPreview();
+
+  // Show loading state
+  btn.querySelector(".play-icon").textContent = "…";
+  btn.classList.add("text-green-400");
+  currentBtn = btn;
+
+  // Fetch Deezer preview URL if not cached
+  var url = card.dataset.preview;
+  function markNoPreview(b) {
+    b.querySelector(".play-icon").innerHTML = '<span style="font-size:9px;line-height:1.1;color:#ef4444;font-weight:700;text-align:center;white-space:nowrap;">NO<br>PREVIEW</span>';
+    b.classList.remove("text-green-400");
+    b.disabled = true;
+  }
+
+  if (url === "fetched-none") {
+    markNoPreview(btn);
+    currentBtn = null;
+    return;
+  }
+
+  function playUrl(url) {
+    if (!url) {
+      card.dataset.preview = "fetched-none";
+      markNoPreview(btn);
+      currentBtn = null;
+      return;
+    }
+    card.dataset.preview = url;
+    audio.src = url;
+    audio.play();
+    btn.querySelector(".play-icon").textContent = "⏸";
+
+    var art = card.querySelector("img");
+    document.getElementById("np-title").textContent  = card.dataset.track;
+    document.getElementById("np-artist").textContent = card.dataset.artist;
+    var npImg = document.getElementById("np-art-img");
+    if (art) { npImg.src = art.src; npImg.classList.remove("hidden"); }
+    document.getElementById("now-playing").classList.remove("hidden");
+    progressInterval = setInterval(updateProgress, 200);
+    audio.onended = () => stopPreview();
+  }
+
+  if (url) {
+    playUrl(url);
+  } else {
+    // Fetch from Deezer via our backend
+    var artist = encodeURIComponent(card.dataset.artist);
+    var track  = encodeURIComponent(card.dataset.track);
+    fetch("/preview?artist=" + artist + "&track=" + track)
+      .then(r => r.json())
+      .then(data => playUrl(data.url))
+      .catch(() => playUrl(null));
+  }
+}
+
+function updateProgress() {
+  if (!audio.duration) return;
+  var pct = (audio.currentTime / audio.duration) * 100;
+  document.getElementById("np-progress").style.width = pct + "%";
+}
+
+function stopPreview() {
+  audio.pause();
+  audio.src = "";
+  if (currentBtn) { resetBtn(currentBtn); currentBtn = null; }
+  document.getElementById("now-playing").classList.add("hidden");
+  document.getElementById("np-progress").style.width = "0%";
+  clearInterval(progressInterval);
+}
+
+function resetBtn(btn) {
+  btn.querySelector(".play-icon").textContent = "▶";
+  btn.classList.remove("text-green-400");
+}
+
+// ── Thumbs up/down ───────────────────────────────────────────────────────────
+
+function vote(btn, value) {
+  var card   = btn.closest(".track-card");
+  var artist = card.dataset.artist;
+  var track  = card.dataset.track;
+
+  fetch("/feedback/track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ artist, track, value })
+  });
+
+  if (value === 1) {
+    // Green pulse then nothing — keep in list
+    card.style.transition = "box-shadow 0.3s";
+    card.style.boxShadow  = "0 0 0 2px #22c55e";
+    btn.textContent = "💚";
+    setTimeout(() => { card.style.boxShadow = ""; }, 1000);
+  } else {
+    // Fade out and remove
+    btn.textContent = "🚫";
+    card.style.transition = "opacity 0.4s, transform 0.4s";
+    card.style.opacity    = "0";
+    card.style.transform  = "translateX(30px)";
+    setTimeout(() => {
+      card.remove();
+      updateCount();
+    }, 400);
+  }
+}
+
+function updateCount() {
+  var n = document.querySelectorAll(".track-card").length;
+  document.getElementById("track-count").textContent =
+    n + " tracks · drag to reorder · 👍👎 to teach the algorithm";
+}
+
+// ── Drag to reorder ───────────────────────────────────────────────────────────
+
+var dragSrc = null;
+document.getElementById("track-list").addEventListener("dragstart", function(e) {
+  dragSrc = e.target.closest(".track-card");
+  dragSrc.style.opacity = "0.4";
+  e.dataTransfer.effectAllowed = "move";
+});
+document.getElementById("track-list").addEventListener("dragend", function(e) {
+  var card = e.target.closest(".track-card");
+  if (card) card.style.opacity = "";
+});
+document.getElementById("track-list").addEventListener("dragover", function(e) {
+  e.preventDefault();
+  var target = e.target.closest(".track-card");
+  if (target && target !== dragSrc) {
+    var rect = target.getBoundingClientRect();
+    var after = e.clientY > rect.top + rect.height / 2;
+    target.parentNode.insertBefore(dragSrc, after ? target.nextSibling : target);
+  }
+});
+
+// ── Re-roll ──────────────────────────────────────────────────────────────────
+
+function reroll() {
+  if (!confirm("Generate a fresh playlist with the same seed and settings?")) return;
+  fetch("/generate/reroll/" + playlistId, { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) window.location = "/generate/status/" + data.new_id;
+    });
+}
+
+// ── Push to Spotify ──────────────────────────────────────────────────────────
 
 function pushToSpotify() {
   var btn = document.getElementById("push-btn");
   btn.textContent = "Adding...";
   btn.disabled = true;
-  fetch("/generate/push/" + playlistId, { method: "POST" })
+
+  // Collect current track order (respects drag reorder + removed thumbs-down)
+  var uris = [...document.querySelectorAll(".track-card")].map(c => c.dataset.uri).filter(Boolean);
+
+  fetch("/generate/push/" + playlistId, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uris })
+  })
     .then(r => r.json())
     .then(data => {
       if (data.ok) {
@@ -63,9 +310,33 @@ function pushToSpotify() {
         btn.disabled = false;
         var s = document.getElementById("push-status");
         s.classList.remove("hidden");
-        s.textContent = "Added to your Spotify! Click 'Open in Spotify' to listen.";
+        s.textContent = "Added " + uris.length + " tracks to your Spotify!";
       }
     });
+}
+
+// ── More like this ───────────────────────────────────────────────────────────
+
+function morelikethis(btn) {
+  var card = btn.closest(".track-card");
+  var artist = card.dataset.artist;
+
+  if (!confirm("Build a new playlist inspired by " + artist + "?")) return;
+
+  btn.textContent = "…";
+  btn.disabled = true;
+
+  fetch("/generate/from-track", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ artist: artist, source_playlist_id: playlistId })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) window.location = "/generate/status/" + data.job_id;
+      else { btn.textContent = "＋"; btn.disabled = false; }
+    })
+    .catch(() => { btn.textContent = "＋"; btn.disabled = false; });
 }
 
 function publishPlaylist() {
@@ -76,7 +347,7 @@ function publishPlaylist() {
     .then(r => r.json())
     .then(data => {
       if (data.ok) {
-        btn.textContent = "Shared with Community ✓";
+        btn.textContent = "Shared ✓";
         btn.classList.add("opacity-50");
       }
     });

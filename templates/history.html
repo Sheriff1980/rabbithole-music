@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}My History - Rabbithole Music{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto px-6 py-10">
+
+  <div class="flex items-center justify-between mb-8 flex-wrap gap-4">
+    <div>
+      <p class="text-green-500 font-semibold text-sm uppercase tracking-widest mb-2">Your Digs</p>
+      <h1 class="text-4xl font-black">Playlist History</h1>
+    </div>
+    <a href="/dashboard" class="btn-green text-sm py-3 px-6">+ New Playlist</a>
+  </div>
+
+  {% if not playlists %}
+  <div class="text-center py-24 text-gray-600">
+    <p class="text-5xl mb-6">🐇</p>
+    <p class="text-xl font-bold mb-2">Nothing here yet.</p>
+    <p class="mb-6">Head to the dashboard and go down the rabbit hole.</p>
+    <a href="/dashboard" class="btn-green text-sm py-3 px-6">Generate Your First Playlist</a>
+  </div>
+
+  {% else %}
+  <div class="space-y-3">
+    {% for p in playlists %}
+    <div class="card p-4 flex items-center gap-4 flex-wrap">
+
+      <!-- Status indicator -->
+      <div class="flex-shrink-0">
+        {% if p.status == "done" %}
+          <div class="w-3 h-3 rounded-full bg-green-500" title="Ready"></div>
+        {% else %}
+          <div class="w-3 h-3 rounded-full bg-red-600" title="Generation failed"></div>
+        {% endif %}
+      </div>
+
+      <!-- Info -->
+      <div class="flex-1 min-w-0">
+        <div class="font-bold truncate">{{ p.title }}</div>
+        <div class="text-gray-500 text-xs mt-0.5 flex items-center gap-3 flex-wrap">
+          <span>Based on <span class="text-gray-400">{{ p.seed_name }}</span></span>
+          {% if p.status == "done" %}
+            <span>{{ p.track_count }} tracks</span>
+          {% else %}
+            <span class="text-red-500">Generation failed</span>
+          {% endif %}
+          {% if p.is_published %}
+            <span class="text-green-500">&#10003; Shared</span>
+          {% endif %}
+          {% if p.spotify_id %}
+            <span class="text-green-400">&#10003; In Spotify</span>
+          {% endif %}
+          <span>{{ p.created_at | string | truncate(16, True, '') }}</span>
+        </div>
+      </div>
+
+      <!-- Settings badges -->
+      <div class="hidden sm:flex gap-2 flex-shrink-0">
+        <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded-full"
+              title="Adventurousness">
+          {% set adv_labels = ['', 'Safe', 'Familiar', 'Balanced', 'Adventurous', 'Wild'] %}
+          {{ adv_labels[p.adv] if p.adv else 'Balanced' }}
+        </span>
+        <span class="text-xs bg-gray-800 text-gray-500 px-2 py-0.5 rounded-full"
+              title="Genre spread">
+          {% set spread_labels = ['', 'Focused', 'Mostly Similar', 'Mixed', 'Varied', 'Eclectic'] %}
+          {{ spread_labels[p.spread] if p.spread else 'Mixed' }}
+        </span>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex gap-2 flex-shrink-0 flex-wrap">
+        {% if p.status == "done" %}
+          <a href="/generate/result/{{ p.id }}" class="btn-outline text-xs py-2 px-4">View</a>
+          <button onclick="reroll('{{ p.id }}', this)"
+                  class="text-xs border border-gray-700 text-gray-400 hover:border-white hover:text-white rounded-full px-4 py-2 transition font-bold">
+            ↺ Re-roll
+          </button>
+          <button id="refresh-btn-{{ p.id }}"
+                  onclick="toggleRefresh('{{ p.id }}', this)"
+                  class="text-xs rounded-full px-4 py-2 transition font-bold border
+                         {{ 'bg-green-900 border-green-500 text-green-400' if p.auto_refresh else 'border-gray-700 text-gray-500 hover:border-gray-400 hover:text-gray-300' }}"
+                  title="{{ 'Auto-refreshes every Monday' if p.auto_refresh else 'Click to auto-refresh every Monday' }}">
+            {{ '🔁 Weekly' if p.auto_refresh else '🔁 Auto' }}
+          </button>
+          {% if p.spotify_id %}
+            <a href="https://open.spotify.com/playlist/{{ p.spotify_id }}" target="_blank"
+               class="text-xs bg-green-500 hover:bg-green-400 text-black font-bold rounded-full px-4 py-2 transition">
+              Spotify ↗
+            </a>
+          {% endif %}
+        {% else %}
+          <button onclick="reroll('{{ p.id }}', this)"
+                  class="text-xs border border-gray-700 text-gray-400 hover:border-white hover:text-white rounded-full px-4 py-2 transition font-bold">
+            ↺ Try Again
+          </button>
+        {% endif %}
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+
+<div id="toast" class="hidden fixed bottom-8 left-1/2 -translate-x-1/2 bg-green-500 text-black font-bold px-6 py-3 rounded-full shadow-lg z-50"></div>
+
+<script>
+function showToast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.remove("hidden");
+  setTimeout(() => t.classList.add("hidden"), 3000);
+}
+
+function toggleRefresh(playlistId, btn) {
+  fetch("/generate/toggle-refresh/" + playlistId, { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        var on = data.auto_refresh === 1;
+        btn.textContent = on ? "🔁 Weekly" : "🔁 Auto";
+        btn.title = on ? "Auto-refreshes every Monday" : "Click to auto-refresh every Monday";
+        btn.className = btn.className
+          .replace(/bg-green-900|border-green-500|text-green-400|border-gray-700|text-gray-500|hover:border-gray-400|hover:text-gray-300/g, "")
+          .trim();
+        if (on) {
+          btn.classList.add("bg-green-900", "border-green-500", "text-green-400");
+        } else {
+          btn.classList.add("border-gray-700", "text-gray-500", "hover:border-gray-400", "hover:text-gray-300");
+        }
+        showToast(on ? "Auto-refresh on — new playlist every Monday!" : "Auto-refresh off.");
+      }
+    });
+}
+
+function reroll(playlistId, btn) {
+  if (!confirm("Generate a fresh playlist with the same seed and settings?")) return;
+  btn.textContent = "…";
+  btn.disabled = true;
+  fetch("/generate/reroll/" + playlistId, { method: "POST" })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) window.location = "/generate/status/" + data.new_id;
+      else { btn.textContent = "↺ Re-roll"; btn.disabled = false; }
+    })
+    .catch(() => { btn.textContent = "↺ Re-roll"; btn.disabled = false; });
+}
+</script>
+{% endblock %}

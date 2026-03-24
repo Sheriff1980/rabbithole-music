@@ -1,52 +1,283 @@
 {% extends "base.html" %}
 {% block title %}Choose Your Seed - Rabbithole Music{% endblock %}
 {% block content %}
-<div class="max-w-5xl mx-auto px-6 py-10">
-  <h1 class="text-4xl font-black mb-2">What's your starting point?</h1>
-  <p class="text-gray-400 mb-10">Pick a playlist or your liked songs — we'll use it to find music you've never heard.</p>
 
-  <form method="POST" action="/generate/start">
-    <!-- Liked Songs option -->
-    <div class="mb-8">
-      <h2 class="text-xl font-bold mb-4 text-gray-300">Your Library</h2>
-      <button type="submit" name="seed_type" value="liked"
-              onclick="document.querySelector('[name=seed_name]').value='Liked Songs'"
-              class="w-full card p-4 flex items-center gap-4 cursor-pointer text-left hover:border hover:border-green-500 transition group">
-        <div class="w-16 h-16 rounded flex items-center justify-center flex-shrink-0" style="background: linear-gradient(135deg, #450af5, #c4efd9)">
-          <svg viewBox="0 0 24 24" class="w-8 h-8 fill-white"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-        </div>
-        <div>
-          <div class="font-bold text-lg">Liked Songs</div>
-          <div class="text-gray-400 text-sm">Use your entire saved library as the seed</div>
-        </div>
-        <div class="ml-auto text-green-500 opacity-0 group-hover:opacity-100 transition">
-          <svg viewBox="0 0 24 24" class="w-6 h-6 fill-current"><path d="M8 5v14l11-7z"/></svg>
-        </div>
-      </button>
-    </div>
+<!-- STICKY CONTROL BAR -->
+<div id="control-bar" class="sticky top-0 z-50 border-b border-gray-800 shadow-xl" style="background:#0a0a0a">
+  <form method="POST" action="/generate/start" id="gen-form">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="seed_type" id="seed_type" value="liked">
+    <input type="hidden" name="seed_name" id="seed_name" value="All Saved Songs">
+    <input type="hidden" name="excluded_genres" id="excluded_genres" value="">
 
-    <!-- Playlist grid -->
-    <div>
-      <h2 class="text-xl font-bold mb-4 text-gray-300">Your Playlists</h2>
-      <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {% for p in playlists %}
-        <button type="submit" name="seed_type" value="{{ p.id }}"
-                onclick="document.querySelector('[name=seed_name]').value='{{ p.name|replace(\"'\", \"\\'\") }}'"
-                class="card p-4 text-left cursor-pointer hover:border hover:border-green-500 transition group">
-          {% if p.image %}
-            <img src="{{ p.image }}" class="w-full aspect-square object-cover rounded mb-3">
-          {% else %}
-            <div class="w-full aspect-square rounded mb-3 flex items-center justify-center" style="background:#282828">
-              <svg viewBox="0 0 24 24" class="w-12 h-12 fill-gray-600"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-            </div>
-          {% endif %}
-          <div class="font-semibold text-sm truncate">{{ p.name }}</div>
-          <div class="text-gray-500 text-xs mt-1">{{ p.track_count }} tracks</div>
+    <!-- Row 1: Name + Button -->
+    <div class="max-w-5xl mx-auto px-6 pt-4 pb-2 flex items-center gap-4">
+      <div class="flex-1">
+        <label class="text-xs text-gray-500 uppercase tracking-wider mb-1 block">Playlist Name</label>
+        <input type="text" name="playlist_name" id="playlist_name" placeholder="Leave blank to auto-name..."
+               class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 transition">
+      </div>
+      <div class="flex-shrink-0 pt-5">
+        <button type="submit"
+                class="bg-green-500 hover:bg-green-400 text-black font-black px-6 py-2 rounded-full text-sm transition whitespace-nowrap">
+          Go Down The Rabbit Hole &darr;
         </button>
-        {% endfor %}
       </div>
     </div>
-    <input type="hidden" name="seed_name" value="Liked Songs">
+
+    <!-- Row 2: Sliders -->
+    <div class="max-w-5xl mx-auto px-6 pb-3 grid grid-cols-3 gap-6">
+
+      <!-- Playlist Size -->
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-xs text-gray-400 uppercase tracking-wider">Playlist Size</label>
+          <span id="size-val" class="text-xs font-bold text-green-400">60 tracks</span>
+        </div>
+        <input type="range" name="playlist_size" min="20" max="100" value="60" step="5"
+               oninput="document.getElementById('size-val').textContent=this.value+' tracks'"
+               class="w-full accent-green-500">
+      </div>
+
+      <!-- Adventurousness -->
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-xs text-gray-400 uppercase tracking-wider">Adventurousness</label>
+          <span id="adv-val" class="text-xs font-bold text-green-400">Balanced</span>
+        </div>
+        <input type="range" name="adventurousness" min="1" max="5" value="3" step="1"
+               oninput="updateAdv(this.value)"
+               class="w-full accent-green-500">
+        <div class="flex justify-between text-xs text-gray-600 mt-1">
+          <span>Safe</span><span>Wild</span>
+        </div>
+      </div>
+
+      <!-- Genre Spread -->
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-xs text-gray-400 uppercase tracking-wider">Genre Spread</label>
+          <span id="spread-val" class="text-xs font-bold text-green-400">Mixed</span>
+        </div>
+        <input type="range" name="genre_spread" min="1" max="5" value="3" step="1"
+               oninput="updateSpread(this.value)"
+               class="w-full accent-green-500">
+        <div class="flex justify-between text-xs text-gray-600 mt-1">
+          <span>Focused</span><span>Eclectic</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Row 3: Genre exclusion pills -->
+    <div class="max-w-5xl mx-auto px-6 pb-4 flex items-center gap-2 flex-wrap">
+      <span class="text-xs text-gray-500 uppercase tracking-wider flex-shrink-0">Skip:</span>
+
+      <!-- Quick pills -->
+      {% for genre in quick_genres %}
+      <button type="button" onclick="toggleGenre(this, '{{ genre }}')"
+              class="genre-pill px-3 py-1 rounded-full text-xs border border-gray-700 text-gray-400 hover:border-red-500 hover:text-red-400 transition flex-shrink-0">
+        {{ genre }}
+      </button>
+      {% endfor %}
+
+      <!-- More genres button + dropdown -->
+      <div class="relative flex-shrink-0" id="genre-dropdown-wrap">
+        <button type="button" onclick="toggleDropdown()"
+                class="px-3 py-1 rounded-full text-xs border border-orange-500 text-orange-400 bg-orange-950 hover:bg-orange-900 hover:text-orange-300 transition font-semibold">
+          + More genres
+        </button>
+        <div id="genre-dropdown"
+             class="hidden absolute left-0 top-8 z-50 w-64 rounded-xl border border-gray-700 shadow-2xl overflow-hidden"
+             style="background:#1a1a1a">
+          <div class="p-2 border-b border-gray-700">
+            <input type="text" id="genre-search" placeholder="Search genres..."
+                   oninput="filterGenres(this.value)"
+                   class="w-full bg-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-green-500">
+          </div>
+          <div id="genre-list" class="max-h-64 overflow-y-auto p-2 flex flex-col gap-1">
+            {% for genre in all_genres %}
+            <button type="button"
+                    data-genre="{{ genre|lower }}"
+                    onclick="toggleGenreFromList(this, '{{ genre|lower }}')"
+                    class="genre-list-item text-left px-3 py-1.5 rounded-lg text-sm text-gray-300 hover:bg-gray-700 transition">
+              {{ genre }}
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Selected extras (dynamically added) -->
+      <div id="extra-pills" class="flex flex-wrap gap-2"></div>
+    </div>
+
   </form>
 </div>
+
+<!-- SCROLLABLE PLAYLIST PICKER -->
+<div class="max-w-5xl mx-auto px-6 py-8">
+  <p class="text-gray-500 text-sm mb-6">Pick a seed below — settings above apply to whichever you click.</p>
+
+  <!-- Liked Songs -->
+  <div class="mb-8">
+    <h2 class="text-xl font-bold mb-1 text-gray-300">Your Library</h2>
+    <p class="text-gray-600 text-xs mb-4">Use your whole library or pick a specific playlist below</p>
+    <div onclick="selectSeed('liked', 'Liked Songs')"
+         class="seed-card w-full card p-4 flex items-center gap-4 cursor-pointer text-left hover:border hover:border-green-500 transition group">
+      <div class="w-16 h-16 rounded flex items-center justify-center flex-shrink-0"
+           style="background: linear-gradient(135deg, #450af5, #c4efd9)">
+        <svg viewBox="0 0 24 24" class="w-8 h-8 fill-white">
+          <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="font-bold text-lg">All Saved Songs</div>
+        <div class="text-gray-400 text-sm">Every song you've ever saved or liked on Spotify</div>
+      </div>
+      <div class="ml-auto">
+        <div class="selected-badge hidden bg-green-500 text-black text-xs font-black px-3 py-1 rounded-full">SELECTED</div>
+        <div class="hover-badge text-green-500 opacity-0 group-hover:opacity-100 transition text-sm">Click to select &rarr;</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Playlists -->
+  <div>
+    <h2 class="text-xl font-bold mb-4 text-gray-300">Your Playlists</h2>
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      {% for p in playlists %}
+      <div onclick="selectSeed('{{ p.id }}', '{{ p.name|replace("'", "\\u0027") }}')"
+           class="seed-card card p-4 text-left cursor-pointer hover:border hover:border-green-500 transition group relative">
+        {% if p.image %}
+          <img src="{{ p.image }}" class="w-full aspect-square object-cover rounded mb-3">
+        {% else %}
+          <div class="w-full aspect-square rounded mb-3 flex items-center justify-center" style="background:#282828">
+            <svg viewBox="0 0 24 24" class="w-12 h-12 fill-gray-600">
+              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+            </svg>
+          </div>
+        {% endif %}
+        <div class="font-semibold text-sm truncate">{{ p.name }}</div>
+        <div class="text-gray-500 text-xs mt-1">{{ p.track_count }} tracks</div>
+        <div class="selected-badge hidden absolute top-2 right-2 bg-green-500 text-black text-xs font-black px-2 py-0.5 rounded-full">&#10003;</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script>
+const ADV_LABELS    = ['', 'Safe', 'Familiar', 'Balanced', 'Adventurous', 'Wild'];
+const SPREAD_LABELS = ['', 'Focused', 'Mostly Similar', 'Mixed', 'Varied', 'Eclectic'];
+
+function updateAdv(v)    { document.getElementById('adv-val').textContent    = ADV_LABELS[v]; }
+function updateSpread(v) { document.getElementById('spread-val').textContent = SPREAD_LABELS[v]; }
+
+function selectSeed(id, name) {
+  document.getElementById('seed_type').value = id;
+  document.getElementById('seed_name').value = name;
+  const nameInput = document.getElementById('playlist_name');
+  if (!nameInput.value.trim()) nameInput.placeholder = 'e.g. Rabbit Hole - ' + name;
+  document.querySelectorAll('.seed-card').forEach(c => {
+    c.classList.remove('border', 'border-green-500');
+    c.querySelectorAll('.selected-badge').forEach(b => b.classList.add('hidden'));
+  });
+  event.currentTarget.classList.add('border', 'border-green-500');
+  event.currentTarget.querySelectorAll('.selected-badge').forEach(b => b.classList.remove('hidden'));
+  document.getElementById('control-bar').scrollIntoView({behavior: 'smooth'});
+}
+
+// ── Genre exclusion ──────────────────────────────────────────────────────────
+
+function getExcluded() {
+  return new Set(document.getElementById('excluded_genres').value
+    .split(',').map(g => g.trim().toLowerCase()).filter(Boolean));
+}
+function setExcluded(set) {
+  document.getElementById('excluded_genres').value = [...set].join(',');
+}
+
+function toggleGenre(btn, genre) {
+  const g = genre.toLowerCase();
+  const ex = getExcluded();
+  if (ex.has(g)) {
+    ex.delete(g);
+    btn.classList.remove('border-red-500', 'text-red-400', 'bg-red-950');
+    btn.classList.add('border-gray-700', 'text-gray-400');
+  } else {
+    ex.add(g);
+    btn.classList.add('border-red-500', 'text-red-400', 'bg-red-950');
+    btn.classList.remove('border-gray-700', 'text-gray-400');
+  }
+  setExcluded(ex);
+}
+
+function toggleGenreFromList(btn, genre) {
+  const g = genre.toLowerCase();
+  const ex = getExcluded();
+  if (ex.has(g)) {
+    ex.delete(g);
+    btn.classList.remove('bg-red-950', 'text-red-400');
+    btn.classList.add('text-gray-300');
+    // Remove extra pill
+    const pill = document.querySelector(`[data-extra-pill="${g}"]`);
+    if (pill) pill.remove();
+  } else {
+    ex.add(g);
+    btn.classList.add('bg-red-950', 'text-red-400');
+    btn.classList.remove('text-gray-300');
+    // Add extra pill if not a quick pill
+    const isQuick = [...document.querySelectorAll('.genre-pill')]
+      .some(p => p.textContent.trim().toLowerCase() === g);
+    if (!isQuick) {
+      const pill = document.createElement('span');
+      pill.dataset.extraPill = g;
+      pill.className = 'flex items-center gap-1 px-3 py-1 rounded-full text-xs bg-red-950 border border-red-500 text-red-400';
+      pill.innerHTML = `${genre} <button type="button" onclick="removeExtraGenre(this,'${g}')" class="hover:text-white">&times;</button>`;
+      document.getElementById('extra-pills').appendChild(pill);
+    }
+  }
+  setExcluded(ex);
+}
+
+function removeExtraGenre(btn, genre) {
+  const ex = getExcluded();
+  ex.delete(genre);
+  setExcluded(ex);
+  btn.closest('[data-extra-pill]').remove();
+  // Uncheck in list
+  const listBtn = document.querySelector(`[data-genre="${genre}"]`);
+  if (listBtn) {
+    listBtn.classList.remove('bg-red-950', 'text-red-400');
+    listBtn.classList.add('text-gray-300');
+  }
+}
+
+// ── Dropdown ─────────────────────────────────────────────────────────────────
+
+function toggleDropdown() {
+  const dd = document.getElementById('genre-dropdown');
+  dd.classList.toggle('hidden');
+  if (!dd.classList.contains('hidden')) {
+    document.getElementById('genre-search').focus();
+  }
+}
+
+function filterGenres(query) {
+  const q = query.toLowerCase();
+  document.querySelectorAll('.genre-list-item').forEach(btn => {
+    const match = btn.dataset.genre.includes(q);
+    btn.style.display = match ? '' : 'none';
+  });
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('genre-dropdown-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('genre-dropdown').classList.add('hidden');
+  }
+});
+</script>
+
 {% endblock %}

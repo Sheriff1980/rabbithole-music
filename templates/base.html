@@ -27,6 +27,8 @@
     .btn-outline:hover { border-color: #fff; }
     ::-webkit-scrollbar { width: 8px; } ::-webkit-scrollbar-track { background: #121212; } ::-webkit-scrollbar-thumb { background: #535353; border-radius: 4px; }
   </style>
+  <!-- CSRF token — read by the fetch interceptor below -->
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   {% block head %}{% endblock %}
 </head>
 <body class="h-full min-h-screen">
@@ -37,6 +39,9 @@
     </a>
     <div class="flex items-center gap-4">
       <a href="/community" class="text-gray-400 hover:text-white transition text-sm font-semibold">Community</a>
+      {% if session.user_id %}
+      <a href="/history" class="text-gray-400 hover:text-white transition text-sm font-semibold">History</a>
+      {% endif %}
       {% if session.user_id %}
         <div class="flex items-center gap-3">
           {% if session.avatar_url %}
@@ -53,5 +58,28 @@
   <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // Global fetch interceptor — automatically attaches the CSRF token to every
+    // non-GET request so individual templates don't have to think about it.
+    (function () {
+      var _csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+      var _origFetch = window.fetch;
+      window.fetch = function (url, options) {
+        options = options || {};
+        var method = (options.method || 'GET').toUpperCase();
+        if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+          var headers = options.headers || {};
+          if (!(headers instanceof Headers)) {
+            headers['X-CSRFToken'] = _csrfToken;
+          } else {
+            headers.set('X-CSRFToken', _csrfToken);
+          }
+          options.headers = headers;
+        }
+        return _origFetch(url, options);
+      };
+    })();
+  </script>
 </body>
 </html>

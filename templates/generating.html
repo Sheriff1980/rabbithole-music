@@ -34,13 +34,15 @@
           document.getElementById("status-msg").textContent = "Your playlist is ready";
           setTimeout(() => { window.location = data.redirect; }, 800);
         } else if (data.status === "error") {
+          if (data.message === "Not logged in") {
+            window.location = "/auth/login?next=/dashboard";
+          }
           document.getElementById("spinner").classList.add("hidden");
           document.getElementById("error-box").classList.remove("hidden");
           document.getElementById("error-msg").textContent = data.message;
         } else {
-          // Simulate progress
-          progress = Math.min(90, progress + (pollCount < 3 ? 15 : 5));
-          document.getElementById("progress-bar").style.width = progress + "%";
+          if (data.progress) document.getElementById("progress-bar").style.width = data.progress + "%";
+          if (data.message) document.getElementById("status-msg").textContent = data.message;
           setTimeout(poll, 2500);
         }
       })

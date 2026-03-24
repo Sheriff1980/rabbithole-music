@@ -35,7 +35,7 @@
         <a href="/community/playlist/{{ p.id }}" class="hover:text-green-500 transition">
           <h2 class="text-xl font-bold mb-1 truncate">{{ p.title }}</h2>
         </a>
-        <p class="text-gray-500 text-sm mb-3">by {{ p.creator }} · {{ p.track_count }} tracks · seeded from "{{ p.seed_name }}"</p>
+        <p class="text-gray-500 text-sm mb-3">by {{ p.creator }} · {{ p.track_count }} tracks · based on "{{ p.seed_name }}"</p>
         <div class="flex gap-2 flex-wrap">
           {% for t in p.preview_tracks[:3] %}
           <span class="bg-dark-700 text-gray-300 text-xs px-3 py-1 rounded-full">{{ t.artist }} – {{ t.name or t.track }}</span>

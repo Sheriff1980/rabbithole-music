@@ -1,7 +1,45 @@
+import json
 from flask import Blueprint, render_template, session, redirect, url_for
 from ..auth import get_spotify_client
+from ..models import get_conn
+from sqlalchemy import text
+import requests, os
 
 main_bp = Blueprint("main", __name__)
+
+# Tags that are metadata/social, not genres — filter these out
+NON_GENRE_TAGS = {
+    "seen live", "favorites", "favourite", "love", "loved", "awesome", "good",
+    "great", "best", "beautiful", "amazing", "cool", "nice", "sexy", "sad",
+    "happy", "chill", "mellow", "relax", "relaxing", "sleep", "workout",
+    "party", "summer", "winter", "spring", "autumn", "road trip", "driving",
+    "study", "focus", "morning", "night", "rainy day", "sunshine",
+    "owned on vinyl", "under 2000 listeners", "all", "spotify", "youtube",
+    "2000s", "2010s", "1990s", "1980s", "1970s", "1960s", "00s", "90s", "80s",
+    "70s", "60s", "american", "british", "german", "french", "swedish",
+    "canadian", "australian", "japanese", "korean", "female vocalists",
+    "male vocalists", "vocals", "guitar", "piano", "instrumental",
+    "singer-songwriter",
+}
+
+def fetch_lastfm_genres(limit=200):
+    """Fetch top tags from Last.fm and filter to just genre-like ones."""
+    try:
+        resp = requests.get("http://ws.audioscrobbler.com/2.0/", params={
+            "method": "chart.getTopTags",
+            "api_key": os.getenv("LASTFM_API_KEY"),
+            "format": "json",
+            "limit": limit,
+        }, timeout=5)
+        tags = resp.json().get("tags", {}).get("tag", [])
+        genres = []
+        for t in tags:
+            name = t["name"].lower().strip()
+            if name not in NON_GENRE_TAGS and len(name) > 1 and not name.isdigit():
+                genres.append(t["name"])
+        return genres
+    except Exception:
+        return []
 
 @main_bp.route("/")
 def index():
@@ -31,4 +69,55 @@ def dashboard():
                 })
         results = sp.next(results) if results.get("next") else None
 
-    return render_template("dashboard.html", playlists=playlists)
+    # Fetch genres from Last.fm
+    all_genres = fetch_lastfm_genres(limit=200)
+    quick_genres = ["jazz", "classical", "metal", "hip-hop", "country",
+                    "electronic", "r&b", "folk", "ambient", "reggae",
+                    "bluegrass", "punk"]
+
+    return render_template("dashboard.html",
+                           playlists=playlists,
+                           quick_genres=quick_genres,
+                           all_genres=all_genres)
+
+
+@main_bp.route("/history")
+def history():
+    if "user_id" not in session:
+        return redirect(url_for("auth.login"))
+
+    with get_conn() as conn:
+        rows = conn.execute(text("""
+            SELECT id, title, seed_name, seed_type, status, track_data,
+                   spotify_playlist_id, is_published, created_at,
+                   playlist_size, adventurousness, genre_spread, auto_refresh
+            FROM playlists
+            WHERE owner_id=:uid AND status IN ('done', 'error')
+            ORDER BY created_at DESC
+        """), {"uid": session["user_id"]}).fetchall()
+
+    playlists = []
+    for r in rows:
+        track_count = 0
+        if r[5] and r[4] == "done":
+            try:
+                track_count = len(json.loads(r[5]))
+            except Exception:
+                pass
+        playlists.append({
+            "id":           r[0],
+            "title":        r[1],
+            "seed_name":    r[2],
+            "seed_type":    r[3],
+            "status":       r[4],
+            "track_count":  track_count,
+            "spotify_id":   r[6],
+            "is_published": r[7],
+            "created_at":   r[8],
+            "size":         r[9],
+            "adv":          r[10],
+            "spread":       r[11],
+            "auto_refresh": r[12],
+        })
+
+    return render_template("history.html", playlists=playlists)
