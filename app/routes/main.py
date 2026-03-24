@@ -1,5 +1,5 @@
 import json
-from flask import Blueprint, render_template, session, redirect, url_for
+from flask import Blueprint, render_template, session, redirect, url_for, jsonify
 from ..auth import get_spotify_client
 from ..models import get_conn
 from sqlalchemy import text
@@ -40,6 +40,12 @@ def fetch_lastfm_genres(limit=200):
         return genres
     except Exception:
         return []
+
+@main_bp.route("/health")
+def health():
+    """Lightweight keep-alive endpoint — no DB, no auth, instant 200."""
+    return jsonify({"status": "ok"}), 200
+
 
 @main_bp.route("/")
 def index():
