@@ -9,24 +9,60 @@
     <input type="hidden" name="seed_type" id="seed_type" value="liked">
     <input type="hidden" name="seed_name" id="seed_name" value="All Saved Songs">
     <input type="hidden" name="excluded_genres" id="excluded_genres" value="">
+    <input type="hidden" name="deep_cuts" id="deep_cuts" value="0">
+    <input type="hidden" name="surprise_me" id="surprise_me" value="0">
 
-    <!-- Row 1: Name + Button -->
-    <div class="max-w-5xl mx-auto px-6 pt-4 pb-2 flex items-center gap-4">
+    <!-- Row 0: Artist/Genre Search -->
+    <div class="max-w-5xl mx-auto px-6 pt-4 pb-2">
+      <div class="relative">
+        <label class="text-xs text-gray-500 uppercase tracking-wider mb-1 block">Search for an artist or genre</label>
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1">
+            <input type="text" id="artist-search" autocomplete="off"
+                   placeholder="Type an artist name, band, or genre..."
+                   class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-purple-500 transition pl-9">
+            <svg class="absolute left-3 top-2.5 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+          </div>
+          <button type="button" id="clear-search" onclick="clearSearch()"
+                  class="hidden text-gray-400 hover:text-white text-sm px-2 py-2 transition">&times; Clear</button>
+        </div>
+        <!-- Search results dropdown -->
+        <div id="search-results" class="hidden absolute left-0 right-0 top-full mt-1 z-50 rounded-xl border border-gray-700 shadow-2xl overflow-hidden" style="background:#1a1a1a">
+          <div id="search-results-list" class="max-h-72 overflow-y-auto"></div>
+        </div>
+      </div>
+      <!-- Selected search seed indicator -->
+      <div id="search-seed-badge" class="hidden mt-2 inline-flex items-center gap-2 bg-purple-950 border border-purple-500 text-purple-300 px-3 py-1 rounded-full text-xs font-semibold">
+        <span id="search-seed-label"></span>
+        <button type="button" onclick="clearSearch()" class="hover:text-white">&times;</button>
+      </div>
+    </div>
+
+    <!-- Row 1: Name + Buttons -->
+    <div class="max-w-5xl mx-auto px-6 pt-2 pb-2 flex items-center gap-3">
       <div class="flex-1">
         <label class="text-xs text-gray-500 uppercase tracking-wider mb-1 block">Playlist Name</label>
         <input type="text" name="playlist_name" id="playlist_name" placeholder="Leave blank to auto-name..."
                class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-green-500 transition">
       </div>
-      <div class="flex-shrink-0 pt-5">
+      <div class="flex-shrink-0 pt-5 flex items-center gap-2">
         <button type="submit"
                 class="bg-green-500 hover:bg-green-400 text-black font-black px-6 py-2 rounded-full text-sm transition whitespace-nowrap">
           Go Down The Rabbit Hole &darr;
         </button>
+        <button type="button" onclick="surpriseMe()"
+                class="bg-purple-600 hover:bg-purple-500 text-white font-black px-5 py-2 rounded-full text-sm transition whitespace-nowrap flex items-center gap-1.5"
+                title="Random genre, maxed diversity — expect the unexpected">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M4 2a2 2 0 00-2 2v1h2V4h1V2H4zM2 8v4h2V8H2zm0 6v2a2 2 0 002 2h1v-2H4v-1H2v-1zm14-12h-1v2h1v1h2V4a2 2 0 00-2-2zm2 6h-2v4h2V8zm0 6h-2v1h-1v2h1a2 2 0 002-2v-1zM8 2H7v2h4V2H8zm0 16h3v-2H8v2z"/></svg>
+          Surprise Me
+        </button>
       </div>
     </div>
 
-    <!-- Row 2: Sliders -->
-    <div class="max-w-5xl mx-auto px-6 pb-3 grid grid-cols-3 gap-6">
+    <!-- Row 2: Sliders + Deep Cuts -->
+    <div class="max-w-5xl mx-auto px-6 pb-3 grid grid-cols-4 gap-5">
 
       <!-- Playlist Size -->
       <div>
@@ -45,7 +81,7 @@
           <label class="text-xs text-gray-400 uppercase tracking-wider">Adventurousness</label>
           <span id="adv-val" class="text-xs font-bold text-green-400">Balanced</span>
         </div>
-        <input type="range" name="adventurousness" min="1" max="5" value="3" step="1"
+        <input type="range" name="adventurousness" id="adv-slider" min="1" max="5" value="3" step="1"
                oninput="updateAdv(this.value)"
                class="w-full accent-green-500">
         <div class="flex justify-between text-xs text-gray-600 mt-1">
@@ -59,12 +95,25 @@
           <label class="text-xs text-gray-400 uppercase tracking-wider">Genre Spread</label>
           <span id="spread-val" class="text-xs font-bold text-green-400">Mixed</span>
         </div>
-        <input type="range" name="genre_spread" min="1" max="5" value="3" step="1"
+        <input type="range" name="genre_spread" id="spread-slider" min="1" max="5" value="3" step="1"
                oninput="updateSpread(this.value)"
                class="w-full accent-green-500">
         <div class="flex justify-between text-xs text-gray-600 mt-1">
           <span>Focused</span><span>Eclectic</span>
         </div>
+      </div>
+
+      <!-- Deep Cuts Toggle -->
+      <div class="flex flex-col justify-center">
+        <label class="text-xs text-gray-400 uppercase tracking-wider mb-2">Deep Cuts</label>
+        <div class="flex items-center gap-3">
+          <button type="button" id="deep-cuts-btn" onclick="toggleDeepCuts()"
+                  class="relative w-12 h-6 rounded-full bg-gray-700 transition-colors duration-200 focus:outline-none">
+            <span id="deep-cuts-knob" class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full transition-transform duration-200"></span>
+          </button>
+          <span id="deep-cuts-label" class="text-xs text-gray-500">Off</span>
+        </div>
+        <p class="text-xs text-gray-600 mt-1">Find the obscure stuff</p>
       </div>
     </div>
 
@@ -114,15 +163,15 @@
   </form>
 </div>
 
-<!-- SCROLLABLE PLAYLIST PICKER -->
+<!-- SCROLLABLE SEED PICKER -->
 <div class="max-w-5xl mx-auto px-6 py-8">
-  <p class="text-gray-500 text-sm mb-6">Pick a seed below — settings above apply to whichever you click.</p>
+  <p class="text-gray-500 text-sm mb-6">Search for an artist above, or pick a seed below — settings above apply to whichever you choose.</p>
 
   <!-- Liked Songs -->
   <div class="mb-8">
     <h2 class="text-xl font-bold mb-1 text-gray-300">Your Library</h2>
     <p class="text-gray-600 text-xs mb-4">Use your whole library or pick a specific playlist below</p>
-    <div onclick="selectSeed('liked', 'Liked Songs')"
+    <div onclick="selectSeed('liked', 'All Saved Songs')"
          class="seed-card w-full card p-4 flex items-center gap-4 cursor-pointer text-left hover:border hover:border-green-500 transition group">
       <div class="w-16 h-16 rounded flex items-center justify-center flex-shrink-0"
            style="background: linear-gradient(135deg, #450af5, #c4efd9)">
@@ -173,11 +222,193 @@ const SPREAD_LABELS = ['', 'Focused', 'Mostly Similar', 'Mixed', 'Varied', 'Ecle
 function updateAdv(v)    { document.getElementById('adv-val').textContent    = ADV_LABELS[v]; }
 function updateSpread(v) { document.getElementById('spread-val').textContent = SPREAD_LABELS[v]; }
 
+// ── Deep Cuts Toggle ────────────────────────────────────────────────────────
+
+function toggleDeepCuts() {
+  const input = document.getElementById('deep_cuts');
+  const btn   = document.getElementById('deep-cuts-btn');
+  const knob  = document.getElementById('deep-cuts-knob');
+  const label = document.getElementById('deep-cuts-label');
+  const isOn  = input.value === '1';
+
+  if (isOn) {
+    input.value = '0';
+    btn.classList.remove('bg-amber-600');
+    btn.classList.add('bg-gray-700');
+    knob.style.transform = 'translateX(0)';
+    label.textContent = 'Off';
+    label.classList.remove('text-amber-400');
+    label.classList.add('text-gray-500');
+  } else {
+    input.value = '1';
+    btn.classList.add('bg-amber-600');
+    btn.classList.remove('bg-gray-700');
+    knob.style.transform = 'translateX(24px)';
+    label.textContent = 'Obscure only';
+    label.classList.add('text-amber-400');
+    label.classList.remove('text-gray-500');
+  }
+}
+
+// ── Surprise Me ─────────────────────────────────────────────────────────────
+
+const ALL_GENRES = {{ all_genres | tojson }};
+
+function surpriseMe() {
+  const seedType = document.getElementById('seed_type').value;
+
+  // If no artist/genre seed is set, pick a random genre
+  if (!seedType.startsWith('artist:') && !seedType.startsWith('genre:')) {
+    const randomGenre = ALL_GENRES[Math.floor(Math.random() * ALL_GENRES.length)];
+    document.getElementById('seed_type').value = 'genre:' + randomGenre;
+    document.getElementById('seed_name').value = randomGenre;
+  }
+
+  // Max out sliders
+  const advSlider = document.getElementById('adv-slider');
+  const spreadSlider = document.getElementById('spread-slider');
+  advSlider.value = 5;
+  spreadSlider.value = 5;
+  updateAdv(5);
+  updateSpread(5);
+
+  // Set surprise_me flag
+  document.getElementById('surprise_me').value = '1';
+
+  // Submit the form
+  document.getElementById('gen-form').submit();
+}
+
+// ── Artist / Genre Search ───────────────────────────────────────────────────
+
+let searchTimeout = null;
+const searchInput   = document.getElementById('artist-search');
+const searchResults = document.getElementById('search-results');
+const resultsList   = document.getElementById('search-results-list');
+
+searchInput.addEventListener('input', function() {
+  clearTimeout(searchTimeout);
+  const q = this.value.trim();
+  if (q.length < 2) {
+    searchResults.classList.add('hidden');
+    return;
+  }
+  searchTimeout = setTimeout(() => doSearch(q), 300);
+});
+
+// Close search results when clicking outside
+document.addEventListener('click', function(e) {
+  if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+    searchResults.classList.add('hidden');
+  }
+});
+
+async function doSearch(q) {
+  try {
+    const resp = await fetch('/api/search?q=' + encodeURIComponent(q));
+    const data = await resp.json();
+    resultsList.innerHTML = '';
+
+    if (data.artists.length === 0 && data.genres.length === 0) {
+      resultsList.innerHTML = '<div class="px-4 py-3 text-gray-500 text-sm">No results found</div>';
+      searchResults.classList.remove('hidden');
+      return;
+    }
+
+    // Artist results
+    if (data.artists.length > 0) {
+      resultsList.innerHTML += '<div class="px-4 py-1.5 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">Artists</div>';
+      for (const a of data.artists) {
+        const div = document.createElement('div');
+        div.className = 'px-4 py-2.5 hover:bg-gray-800 cursor-pointer flex items-center justify-between transition';
+        div.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-purple-900 flex items-center justify-center flex-shrink-0">
+              <svg class="w-4 h-4 text-purple-300" fill="currentColor" viewBox="0 0 20 20"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"/></svg>
+            </div>
+            <span class="text-white text-sm font-medium">${escapeHtml(a.name)}</span>
+          </div>
+          <span class="text-gray-500 text-xs">${a.listeners} listeners</span>
+        `;
+        div.addEventListener('click', () => selectSearchSeed('artist:' + a.name, a.name, 'artist'));
+        resultsList.appendChild(div);
+      }
+    }
+
+    // Genre results
+    if (data.genres.length > 0) {
+      resultsList.innerHTML += '<div class="px-4 py-1.5 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800 border-t border-gray-800">Genres</div>';
+      for (const g of data.genres) {
+        const div = document.createElement('div');
+        div.className = 'px-4 py-2.5 hover:bg-gray-800 cursor-pointer flex items-center gap-3 transition';
+        div.innerHTML = `
+          <div class="w-8 h-8 rounded-full bg-green-900 flex items-center justify-center flex-shrink-0">
+            <svg class="w-4 h-4 text-green-300" fill="currentColor" viewBox="0 0 20 20"><path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z"/></svg>
+          </div>
+          <span class="text-white text-sm font-medium">${escapeHtml(g)}</span>
+        `;
+        div.addEventListener('click', () => selectSearchSeed('genre:' + g, g, 'genre'));
+        resultsList.appendChild(div);
+      }
+    }
+
+    searchResults.classList.remove('hidden');
+  } catch (err) {
+    console.error('Search error:', err);
+  }
+}
+
+function selectSearchSeed(seedType, seedName, type) {
+  document.getElementById('seed_type').value = seedType;
+  document.getElementById('seed_name').value = seedName;
+  searchResults.classList.add('hidden');
+  searchInput.value = '';
+
+  // Show the badge
+  const badge = document.getElementById('search-seed-badge');
+  const label = document.getElementById('search-seed-label');
+  const icon = type === 'artist' ? '🎤' : '🎵';
+  label.textContent = icon + ' ' + seedName;
+  badge.classList.remove('hidden');
+  document.getElementById('clear-search').classList.add('hidden');
+
+  // Deselect all playlist cards
+  document.querySelectorAll('.seed-card').forEach(c => {
+    c.classList.remove('border', 'border-green-500');
+    c.querySelectorAll('.selected-badge').forEach(b => b.classList.add('hidden'));
+  });
+
+  // Update placeholder
+  const nameInput = document.getElementById('playlist_name');
+  if (!nameInput.value.trim()) nameInput.placeholder = 'e.g. Rabbit Hole - ' + seedName;
+}
+
+function clearSearch() {
+  document.getElementById('seed_type').value = 'liked';
+  document.getElementById('seed_name').value = 'All Saved Songs';
+  document.getElementById('search-seed-badge').classList.add('hidden');
+  document.getElementById('clear-search').classList.add('hidden');
+  searchInput.value = '';
+  searchResults.classList.add('hidden');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ── Seed Selection ──────────────────────────────────────────────────────────
+
 function selectSeed(id, name) {
   document.getElementById('seed_type').value = id;
   document.getElementById('seed_name').value = name;
   const nameInput = document.getElementById('playlist_name');
   if (!nameInput.value.trim()) nameInput.placeholder = 'e.g. Rabbit Hole - ' + name;
+
+  // Clear search seed badge
+  document.getElementById('search-seed-badge').classList.add('hidden');
+
   document.querySelectorAll('.seed-card').forEach(c => {
     c.classList.remove('border', 'border-green-500');
     c.querySelectorAll('.selected-badge').forEach(b => b.classList.add('hidden'));
@@ -219,14 +450,12 @@ function toggleGenreFromList(btn, genre) {
     ex.delete(g);
     btn.classList.remove('bg-red-950', 'text-red-400');
     btn.classList.add('text-gray-300');
-    // Remove extra pill
     const pill = document.querySelector(`[data-extra-pill="${g}"]`);
     if (pill) pill.remove();
   } else {
     ex.add(g);
     btn.classList.add('bg-red-950', 'text-red-400');
     btn.classList.remove('text-gray-300');
-    // Add extra pill if not a quick pill
     const isQuick = [...document.querySelectorAll('.genre-pill')]
       .some(p => p.textContent.trim().toLowerCase() === g);
     if (!isQuick) {
@@ -245,7 +474,6 @@ function removeExtraGenre(btn, genre) {
   ex.delete(genre);
   setExcluded(ex);
   btn.closest('[data-extra-pill]').remove();
-  // Uncheck in list
   const listBtn = document.querySelector(`[data-genre="${genre}"]`);
   if (listBtn) {
     listBtn.classList.remove('bg-red-950', 'text-red-400');

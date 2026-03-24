@@ -1,7 +1,8 @@
 import json
-from flask import Blueprint, render_template, session, redirect, url_for, jsonify
+from flask import Blueprint, render_template, session, redirect, url_for, jsonify, request
 from ..auth import get_spotify_client
 from ..models import get_conn
+from ..limiter import limiter
 from sqlalchemy import text
 import requests, os
 
@@ -40,6 +41,38 @@ def fetch_lastfm_genres(limit=200):
         return genres
     except Exception:
         return []
+
+@main_bp.route("/api/search")
+@limiter.limit("30 per minute")
+def api_search():
+    """Autocomplete search for artists and genres via Last.fm."""
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify({"artists": [], "genres": []})
+
+    # Genre matches — filter from known genre list (fast, no API call)
+    all_genres = fetch_lastfm_genres(limit=200)
+    genre_matches = [g for g in all_genres if q.lower() in g.lower()][:5]
+
+    # Artist search via Last.fm
+    artist_matches = []
+    try:
+        resp = requests.get("http://ws.audioscrobbler.com/2.0/", params={
+            "method": "artist.search", "artist": q,
+            "api_key": os.getenv("LASTFM_API_KEY"), "format": "json", "limit": 6,
+        }, timeout=5)
+        results = resp.json().get("results", {}).get("artistmatches", {}).get("artist", [])
+        for a in results:
+            listeners = int(a.get("listeners", "0"))
+            artist_matches.append({
+                "name": a["name"],
+                "listeners": f"{listeners:,}",
+            })
+    except Exception:
+        pass
+
+    return jsonify({"artists": artist_matches, "genres": genre_matches})
+
 
 @main_bp.route("/health")
 def health():

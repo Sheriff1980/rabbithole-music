@@ -92,23 +92,37 @@ def _normalize_track_name(name):
                   '', name, flags=re.IGNORECASE)
     return name.strip()
 
-def search_artist_tracks(sp, artist_name, count=3):
+def search_artist_tracks(sp, artist_name, count=3, deep_cuts=False):
     """
     Search for tracks by artist in one API call.
     Deduplicates by normalized track name to avoid remaster/live duplicates.
+    If deep_cuts=True, filters to tracks with Spotify popularity < 40.
     Returns up to `count` track dicts.
     """
     try:
-        results = sp.search(q=f"artist:{artist_name}", type="track", limit=count * 4, market="US")
+        # Fetch more results when filtering for deep cuts
+        fetch_limit = min(50, count * 10) if deep_cuts else count * 4
+        results = sp.search(q=f"artist:{artist_name}", type="track", limit=fetch_limit, market="US")
         items = results["tracks"]["items"]
         seen = set()
         found = []
         artist_lower = artist_name.lower()
+
+        # Deep cuts: sort by popularity ascending so we prefer obscure tracks
+        if deep_cuts:
+            items = sorted(items, key=lambda t: t.get("popularity", 50))
+
+        popularity_threshold = 40
+
         for t in items:
             main_artist = t["artists"][0]["name"].lower()
-            # Loose match — artist name contains or is contained in result
             if artist_lower not in main_artist and main_artist not in artist_lower:
                 continue
+
+            # Deep cuts: skip popular tracks
+            if deep_cuts and t.get("popularity", 50) > popularity_threshold:
+                continue
+
             norm = _normalize_track_name(t["name"])
             if norm not in seen:
                 seen.add(norm)
@@ -119,9 +133,34 @@ def search_artist_tracks(sp, artist_name, count=3):
                     "album": t["album"]["name"],
                     "album_art": t["album"]["images"][1]["url"] if len(t["album"]["images"]) > 1 else None,
                     "preview_url": t.get("preview_url"),
+                    "popularity": t.get("popularity", 50),
                 })
             if len(found) >= count:
                 break
+
+        # If deep cuts didn't find enough, relax threshold to 50
+        if deep_cuts and len(found) < count:
+            for t in items:
+                if len(found) >= count:
+                    break
+                main_artist = t["artists"][0]["name"].lower()
+                if artist_lower not in main_artist and main_artist not in artist_lower:
+                    continue
+                if t.get("popularity", 50) > 50:
+                    continue
+                norm = _normalize_track_name(t["name"])
+                if norm not in seen:
+                    seen.add(norm)
+                    found.append({
+                        "uri": t["uri"],
+                        "name": t["name"],
+                        "artist": t["artists"][0]["name"],
+                        "album": t["album"]["name"],
+                        "album_art": t["album"]["images"][1]["url"] if len(t["album"]["images"]) > 1 else None,
+                        "preview_url": t.get("preview_url"),
+                        "popularity": t.get("popularity", 50),
+                    })
+
         return found
     except Exception:
         return []
