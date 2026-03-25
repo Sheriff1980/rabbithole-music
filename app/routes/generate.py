@@ -65,7 +65,7 @@ def run_discovery_background(job_id, user_id, seed_type, access_token,
                 found = search_random_covers(sp, playlist_size=playlist_size,
                                              progress_fn=progress_fn)
 
-            found = dedup_playlist(found)
+            found = dedup_playlist(found, covers_mode=True)
 
             set_progress(job_id, 95, "Almost done...")
             with engine.connect() as conn:

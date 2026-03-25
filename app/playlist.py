@@ -455,6 +455,7 @@ def search_random_covers(sp, playlist_size=60, progress_fn=None):
         progress_fn(15, f"Picking {num_artists} legendary artists to find covers of...")
 
     all_found = []
+    all_seen_uris = set()
     per_artist_target = max(5, playlist_size // num_artists + 2)
 
     for idx, artist_name in enumerate(selected_artists):
@@ -466,20 +467,26 @@ def search_random_covers(sp, playlist_size=60, progress_fn=None):
             progress_fn(pct, f"Finding covers of {artist_name}...")
 
         covers = search_covers(sp, artist_name, playlist_size=per_artist_target)
-        all_found.extend(covers)
+        # Cross-batch URI dedup
+        for c in covers:
+            uri = c.get("uri", "")
+            if uri and uri not in all_seen_uris:
+                all_seen_uris.add(uri)
+                all_found.append(c)
 
     # Shuffle so it's not clustered by original artist
     random.shuffle(all_found)
     return all_found[:playlist_size]
 
 
-def dedup_playlist(tracks):
+def dedup_playlist(tracks, covers_mode=False):
     """
     Final dedup pass on the assembled playlist. Three layers:
     1. URI dedup — same Spotify URI = same track, instant kill
     2. Per-artist name dedup — same artist + similar track name
     3. Cross-artist name dedup — same normalized track name regardless of artist
        (catches covers, re-releases under different artist entries)
+       SKIPPED in covers_mode since different artists covering the same song is the point.
     Prefers the version with higher popularity when dupes are found.
     """
     seen_uris   = {}   # uri -> index in result list
@@ -514,8 +521,8 @@ def dedup_playlist(tracks):
             continue
 
         # Layer 3: Cross-artist dedup — same song name from different artists
-        # (catches same song appearing via different search paths)
-        if norm_name in global_seen:
+        # Skip in covers mode: different artists covering the same song is intentional
+        if not covers_mode and norm_name in global_seen:
             existing_idx = global_seen[norm_name]
             existing_pop = result[existing_idx].get("popularity", 50)
             new_pop = track.get("popularity", 50)
