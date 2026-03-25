@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Add Featured Artist – Admin{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto px-6 py-10">
+
+  <div class="flex items-center gap-3 mb-8">
+    <a href="/admin/featured" class="text-gray-400 hover:text-white transition">&larr;</a>
+    <h1 class="text-2xl font-bold text-white">Add Featured Artist</h1>
+  </div>
+
+  <!-- Step 1: Search Spotify -->
+  <div class="card p-6 mb-6">
+    <h2 class="text-lg font-semibold text-white mb-4">1. Search Spotify</h2>
+    <div class="relative">
+      <input type="text" id="spotify-search" placeholder="Search for an artist..."
+             class="w-full bg-dark-900 border border-dark-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition">
+      <div id="search-results" class="absolute top-full left-0 right-0 mt-1 bg-dark-800 border border-dark-600 rounded-lg overflow-hidden shadow-xl hidden z-10"></div>
+    </div>
+  </div>
+
+  <!-- Step 2: Artist Details (shown after selection) -->
+  <form method="POST" action="/admin/featured/add" id="artist-form" class="hidden">
+    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="spotify_artist_id" id="spotify_artist_id">
+    <input type="hidden" name="spotify_uri" id="spotify_uri">
+    <input type="hidden" name="image_url" id="image_url">
+    <input type="hidden" name="songs" id="songs_json" value="[]">
+
+    <div class="card p-6 mb-6">
+      <h2 class="text-lg font-semibold text-white mb-4">2. Artist Details</h2>
+
+      <!-- Selected artist preview -->
+      <div id="selected-artist" class="flex items-center gap-4 mb-6 p-3 bg-dark-900 rounded-lg">
+        <img id="preview-img" class="w-14 h-14 rounded-full object-cover" src="" alt="">
+        <div>
+          <div id="preview-name" class="text-white font-bold text-lg"></div>
+          <div id="preview-followers" class="text-gray-400 text-sm"></div>
+        </div>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-gray-300 mb-2">Artist Name</label>
+          <input type="text" name="artist_name" id="artist_name" required
+                 class="w-full bg-dark-900 border border-dark-600 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-300 mb-2">Bio / Description</label>
+          <textarea name="bio" rows="3"
+                    class="w-full bg-dark-900 border border-dark-600 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition resize-none"
+                    placeholder="A short blurb about the artist..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Top Tracks -->
+    <div class="card p-6 mb-6">
+      <h2 class="text-lg font-semibold text-white mb-4">3. Featured Songs</h2>
+      <div id="tracks-loading" class="text-gray-400 text-sm hidden">Loading top tracks...</div>
+      <div id="tracks-list" class="space-y-2"></div>
+    </div>
+
+    <button type="submit" class="btn-green w-full text-center text-lg">Add to Featured Queue</button>
+  </form>
+</div>
+
+<script>
+let searchTimer;
+const searchInput = document.getElementById('spotify-search');
+const resultsDiv = document.getElementById('search-results');
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = searchInput.value.trim();
+  if (q.length < 2) { resultsDiv.classList.add('hidden'); return; }
+  searchTimer = setTimeout(() => searchSpotify(q), 300);
+});
+
+async function searchSpotify(q) {
+  const res = await fetch('/admin/featured/search-spotify?q=' + encodeURIComponent(q));
+  const data = await res.json();
+  if (!data.results || !data.results.length) {
+    resultsDiv.innerHTML = '<div class="px-4 py-3 text-gray-500 text-sm">No artists found</div>';
+    resultsDiv.classList.remove('hidden');
+    return;
+  }
+  resultsDiv.innerHTML = data.results.map(a => `
+    <button type="button" onclick='selectArtist(${JSON.stringify(a).replace(/'/g, "&#39;")})'
+            class="w-full flex items-center gap-3 px-4 py-3 hover:bg-dark-700 transition text-left">
+      ${a.image ? `<img src="${a.image}" class="w-10 h-10 rounded-full object-cover">` : '<div class="w-10 h-10 rounded-full bg-dark-600"></div>'}
+      <div>
+        <div class="text-white font-semibold text-sm">${a.name}</div>
+        <div class="text-gray-500 text-xs">${a.followers.toLocaleString()} followers</div>
+      </div>
+    </button>
+  `).join('');
+  resultsDiv.classList.remove('hidden');
+}
+
+async function selectArtist(artist) {
+  resultsDiv.classList.add('hidden');
+  searchInput.value = artist.name;
+
+  // Fill hidden fields
+  document.getElementById('spotify_artist_id').value = artist.id;
+  document.getElementById('spotify_uri').value = artist.uri;
+  document.getElementById('image_url').value = artist.image || '';
+  document.getElementById('artist_name').value = artist.name;
+
+  // Preview
+  document.getElementById('preview-img').src = artist.image || '';
+  document.getElementById('preview-name').textContent = artist.name;
+  document.getElementById('preview-followers').textContent = artist.followers.toLocaleString() + ' followers';
+
+  // Show form
+  document.getElementById('artist-form').classList.remove('hidden');
+
+  // Fetch top tracks
+  document.getElementById('tracks-loading').classList.remove('hidden');
+  document.getElementById('tracks-list').innerHTML = '';
+
+  try {
+    const res = await fetch('/admin/featured/get-tracks/' + artist.id);
+    const data = await res.json();
+    document.getElementById('tracks-loading').classList.add('hidden');
+
+    if (data.songs && data.songs.length) {
+      document.getElementById('songs_json').value = JSON.stringify(data.songs);
+      document.getElementById('tracks-list').innerHTML = data.songs.map(s => `
+        <div class="flex items-center gap-3 p-3 bg-dark-900 rounded-lg">
+          ${s.album_art ? `<img src="${s.album_art}" class="w-10 h-10 rounded">` : ''}
+          <div class="flex-1 min-w-0">
+            <div class="text-white text-sm font-semibold truncate">${s.name}</div>
+            <div class="text-gray-500 text-xs truncate">${s.album_name}</div>
+          </div>
+          ${s.preview_url ? `<button type="button" onclick="this.nextElementSibling.paused ? this.nextElementSibling.play() : this.nextElementSibling.pause()" class="text-green-500 hover:text-green-400"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button><audio src="${s.preview_url}" preload="none"></audio>` : ''}
+        </div>
+      `).join('');
+    } else {
+      document.getElementById('tracks-list').innerHTML = '<div class="text-gray-500 text-sm">No tracks found</div>';
+    }
+  } catch (e) {
+    document.getElementById('tracks-loading').classList.add('hidden');
+    document.getElementById('tracks-list').innerHTML = '<div class="text-red-400 text-sm">Error loading tracks</div>';
+  }
+}
+
+// Close results on click outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#spotify-search') && !e.target.closest('#search-results')) {
+    resultsDiv.classList.add('hidden');
+  }
+});
+</script>
+{% endblock %}

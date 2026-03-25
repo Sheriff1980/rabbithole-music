@@ -80,6 +80,43 @@ def init_db():
                 PRIMARY KEY (user_id, artist, track_name)
             )
         """))
+        # Featured artists queue
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS featured_artists (
+                id TEXT PRIMARY KEY,
+                artist_name TEXT NOT NULL,
+                spotify_artist_id TEXT,
+                spotify_uri TEXT,
+                image_url TEXT,
+                bio TEXT,
+                songs TEXT NOT NULL DEFAULT '[]',
+                is_active INTEGER DEFAULT 0,
+                queue_position INTEGER DEFAULT 0,
+                activated_at TIMESTAMP,
+                added_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        # Artist self-submissions
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS featured_submissions (
+                id TEXT PRIMARY KEY,
+                artist_name TEXT NOT NULL,
+                spotify_url TEXT,
+                contact_email TEXT,
+                message TEXT,
+                status TEXT DEFAULT 'pending',
+                reviewed_by TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        # App-wide settings (k/v store)
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """))
         conn.commit()
 
         # Migration: add deep_cuts and surprise_me columns if missing

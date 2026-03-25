@@ -1,8 +1,10 @@
 import json
+import uuid
 from flask import Blueprint, render_template, session, redirect, url_for, jsonify, request
 from ..auth import get_spotify_client
 from ..models import get_conn
 from ..limiter import limiter
+from ..utils import csrf_required
 from sqlalchemy import text
 import requests, os
 
@@ -221,3 +223,34 @@ def stats():
                            top_artists=top_artists_sorted,
                            source_data=source_sorted,
                            type_data=type_sorted)
+
+
+@main_bp.route("/submit-artist", methods=["GET", "POST"])
+def submit_artist():
+    if request.method == "GET":
+        return render_template("submit_artist.html", submitted=False)
+
+    # POST — process submission
+    artist_name = request.form.get("artist_name", "").strip()
+    spotify_url = request.form.get("spotify_url", "").strip()
+    contact_email = request.form.get("contact_email", "").strip()
+    message = request.form.get("message", "").strip()
+
+    if not artist_name:
+        return render_template("submit_artist.html", submitted=False, error="Artist name is required")
+
+    with get_conn() as conn:
+        conn.execute(text("""
+            INSERT INTO featured_submissions
+              (id, artist_name, spotify_url, contact_email, message)
+            VALUES (:id, :name, :url, :email, :msg)
+        """), {
+            "id": str(uuid.uuid4()),
+            "name": artist_name,
+            "url": spotify_url,
+            "email": contact_email,
+            "msg": message,
+        })
+        conn.commit()
+
+    return render_template("submit_artist.html", submitted=True)

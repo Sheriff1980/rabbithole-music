@@ -32,17 +32,56 @@ def create_app():
     from .routes.generate import generate_bp
     from .routes.community import community_bp
     from .routes.feedback import feedback_bp
+    from .routes.admin import admin_bp
     from .auth import auth_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(generate_bp, url_prefix="/generate")
     app.register_blueprint(community_bp, url_prefix="/community")
     app.register_blueprint(feedback_bp)
+    app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(auth_bp, url_prefix="/auth")
 
     # ── Template globals ──────────────────────────────────────────────────────
-    from .utils import get_csrf_token
+    from .utils import get_csrf_token, is_admin
     app.jinja_env.globals['csrf_token'] = get_csrf_token
+    app.jinja_env.globals['is_admin'] = is_admin
+
+    # ── Featured artist context processor ────────────────────────────────────
+    import json as _json
+    import time as _time
+    from sqlalchemy import text as _text
+
+    _featured_cache = {"data": None, "ts": 0}
+
+    @app.context_processor
+    def inject_featured_artist():
+        now = _time.time()
+        # Cache for 60 seconds to avoid a DB query on every page load
+        if _featured_cache["data"] is not None and (now - _featured_cache["ts"]) < 60:
+            return _featured_cache["data"]
+
+        from .models import get_conn
+        try:
+            with get_conn() as conn:
+                row = conn.execute(_text(
+                    "SELECT id, artist_name, image_url, bio, songs, spotify_uri "
+                    "FROM featured_artists WHERE is_active=1 LIMIT 1"
+                )).fetchone()
+            if row:
+                result = {"featured_artist": {
+                    "id": row[0], "name": row[1], "image": row[2],
+                    "bio": row[3], "songs": _json.loads(row[4] or "[]"),
+                    "uri": row[5],
+                }}
+            else:
+                result = {"featured_artist": None}
+        except Exception:
+            result = {"featured_artist": None}
+
+        _featured_cache["data"] = result
+        _featured_cache["ts"] = now
+        return result
 
     # ── Weekly refresh scheduler ──────────────────────────────────────────────
     from .scheduler import start_scheduler

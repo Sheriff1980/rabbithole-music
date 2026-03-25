@@ -36,6 +36,7 @@
     }
     .btn-kofi:hover { background: #ff7370; transform: scale(1.04); }
     .btn-kofi svg { flex-shrink: 0; }
+    .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
   <!-- CSRF token — read by the fetch interceptor below -->
   <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -54,9 +55,13 @@
     </a>
     <div class="flex items-center gap-4">
       <a href="/community" class="text-gray-400 hover:text-white transition text-sm font-semibold">Community</a>
+      <a href="/submit-artist" class="text-gray-400 hover:text-white transition text-sm font-semibold">Submit Music</a>
       {% if session.user_id %}
       <a href="/history" class="text-gray-400 hover:text-white transition text-sm font-semibold">History</a>
       <a href="/stats" class="text-gray-400 hover:text-white transition text-sm font-semibold">Stats</a>
+      {% if is_admin() %}
+      <a href="/admin/featured" class="text-purple-400 hover:text-purple-300 transition text-sm font-semibold">Admin</a>
+      {% endif %}
       {% endif %}
       <!-- Ko-fi -->
       <a href="https://ko-fi.com/W7W31NLZ7P/tip" target="_blank" rel="noopener" class="btn-kofi" title="Keep the developer caffeinated ☕">
@@ -78,6 +83,63 @@
       {% endif %}
     </div>
   </nav>
+
+  <!-- Featured Artist Banner -->
+  {% if featured_artist %}
+  <div id="featured-banner" class="relative overflow-hidden border-b border-dark-700" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center gap-5">
+      <!-- Close button -->
+      <button onclick="document.getElementById('featured-banner').style.display='none'"
+              class="absolute top-2 right-3 text-gray-500 hover:text-white text-lg">&times;</button>
+      <!-- Artist image -->
+      {% if featured_artist.image %}
+      <img src="{{ featured_artist.image }}" alt="{{ featured_artist.name }}"
+           class="w-16 h-16 rounded-full object-cover border-2 border-purple-500 shadow-lg flex-shrink-0">
+      {% else %}
+      <div class="w-16 h-16 rounded-full bg-purple-900 flex items-center justify-center flex-shrink-0 border-2 border-purple-500">
+        <svg class="w-8 h-8 text-purple-400" fill="currentColor" viewBox="0 0 20 20"><path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z"/></svg>
+      </div>
+      {% endif %}
+      <!-- Info -->
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="text-[10px] uppercase tracking-widest text-purple-400 font-bold">★ Featured Artist</span>
+        </div>
+        <h3 class="text-white font-bold text-lg truncate">{{ featured_artist.name }}</h3>
+        {% if featured_artist.bio %}
+        <p class="text-gray-400 text-xs line-clamp-1">{{ featured_artist.bio }}</p>
+        {% endif %}
+      </div>
+      <!-- Songs -->
+      <div class="hidden md:flex items-center gap-3 flex-shrink-0">
+        {% for song in featured_artist.songs[:3] %}
+        <div class="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 hover:bg-white/10 transition">
+          {% if song.album_art %}
+          <img src="{{ song.album_art }}" class="w-7 h-7 rounded-sm">
+          {% endif %}
+          <div class="max-w-[120px]">
+            <div class="text-white text-xs font-semibold truncate">{{ song.name }}</div>
+          </div>
+          {% if song.spotify_uri %}
+          <a href="https://open.spotify.com/track/{{ song.spotify_uri.split(':')[-1] }}" target="_blank" rel="noopener"
+             class="text-green-500 hover:text-green-400 ml-1" title="Play on Spotify">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          </a>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      <!-- Spotify link -->
+      {% if featured_artist.uri %}
+      <a href="https://open.spotify.com/artist/{{ featured_artist.uri.split(':')[-1] }}" target="_blank" rel="noopener"
+         class="flex-shrink-0 bg-green-500 hover:bg-green-400 text-black font-bold text-xs rounded-full px-4 py-2 transition hover:scale-105">
+        Open in Spotify
+      </a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>

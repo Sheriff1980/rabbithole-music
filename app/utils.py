@@ -91,3 +91,21 @@ def decrypt_token(value: str) -> str:
     except (InvalidToken, Exception):
         # Pre-migration token — stored in plaintext
         return value
+
+
+# ── Admin helpers ────────────────────────────────────────────────────────────
+
+def is_admin():
+    """Check if the current session user is an admin."""
+    admin_ids = os.getenv("ADMIN_USER_IDS", "").split(",")
+    return session.get("user_id") in [a.strip() for a in admin_ids if a.strip()]
+
+
+def admin_required(f):
+    """Decorator that restricts a route to admin users only."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not is_admin():
+            return jsonify({"error": "Admin access required"}), 403
+        return f(*args, **kwargs)
+    return decorated
