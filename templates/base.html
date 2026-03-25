@@ -87,10 +87,10 @@
 
   <!-- Featured Artist Banner -->
   {% if featured_artist %}
-  <div id="featured-banner" class="relative overflow-hidden border-b border-dark-700" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);">
+  <div id="featured-banner" class="relative border-b border-dark-700" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);">
     <div class="max-w-6xl mx-auto px-6 py-4 flex items-center gap-5">
       <!-- Close button -->
-      <button onclick="document.getElementById('featured-banner').style.display='none'"
+      <button onclick="document.getElementById('featured-banner').style.display='none'; document.getElementById('feat-embed-wrap').classList.add('hidden');"
               class="absolute top-2 right-3 text-gray-500 hover:text-white text-lg">&times;</button>
       <!-- Artist image -->
       {% if featured_artist.image %}
@@ -131,13 +131,6 @@
         </button>
         {% endfor %}
       </div>
-      <!-- Spotify embed player (hidden until a song is clicked) -->
-      <div id="feat-embed-wrap" class="hidden absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-full z-50 shadow-2xl rounded-xl overflow-hidden"
-           style="width:352px;">
-        <iframe id="feat-embed" src="" width="352" height="152" frameborder="0"
-                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                loading="lazy" style="border-radius:12px; background:#000;"></iframe>
-      </div>
       <!-- Spotify link -->
       {% if featured_artist.uri %}
       <a href="https://open.spotify.com/artist/{{ featured_artist.uri.split(':')[-1] }}" target="_blank" rel="noopener"
@@ -145,6 +138,14 @@
         Open in Spotify
       </a>
       {% endif %}
+    </div>
+  </div>
+  <!-- Spotify embed player (outside banner so it's not clipped) -->
+  <div id="feat-embed-wrap" class="hidden relative z-50" style="background:#000;">
+    <div class="max-w-md mx-auto py-2 px-4">
+      <iframe id="feat-embed" src="" width="100%" height="152" frameborder="0"
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+              loading="lazy" style="border-radius:12px;"></iframe>
     </div>
   </div>
   {% endif %}
