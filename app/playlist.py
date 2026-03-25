@@ -117,15 +117,28 @@ _RE_VARIANT_PREFIX = re.compile(
 _RE_TRAILING_JUNK = re.compile(r'[\s\-–—.,!?;:]+$')
 _RE_MULTI_SPACE = re.compile(r'\s{2,}')
 _RE_BARE_YEAR = re.compile(r'\s*[-–(]\s*\d{4}\s*\)?$')
+# Normalize repeated characters: "haaa" → "ha", "ooooh" → "oh"
+_RE_REPEATED_CHARS = re.compile(r'(.)\1{2,}')
+# Strip all non-alphanumeric (keep spaces for word boundaries)
+_RE_NON_ALNUM = re.compile(r'[^a-z0-9\s]')
+# Normalize smart quotes / curly apostrophes to straight ones before stripping
+_QUOTE_MAP = str.maketrans({
+    '\u2018': "'", '\u2019': "'", '\u201c': '"', '\u201d': '"',
+    '\u2013': '-', '\u2014': '-', '\u00b4': "'", '\u0060': "'",
+})
 
 
 def _normalize_track_name(name):
     """
     Aggressively normalize a track name for dedup.
     Strips: variant prefixes/suffixes, parenthetical tags, brackets,
-    punctuation, extra spaces, trailing years, and featured credits.
+    punctuation, extra spaces, trailing years, featured credits,
+    and normalizes Unicode quotes/dashes and repeated characters.
     """
     name = name.lower().strip()
+
+    # Normalize Unicode quotes/dashes to ASCII equivalents
+    name = name.translate(_QUOTE_MAP)
 
     # Strip prefix variants: "Extended - You Right" → "You Right"
     name = _RE_VARIANT_PREFIX.sub('', name)
@@ -139,11 +152,15 @@ def _normalize_track_name(name):
     # Strip bare trailing year: "Song - 2024" or "Song (2024)"
     name = _RE_BARE_YEAR.sub('', name)
 
+    # Remove ALL non-alphanumeric characters (punctuation, hyphens, apostrophes)
+    # This catches: "ha-haaa!" vs "ha haaa", "don't" vs "dont", etc.
+    name = _RE_NON_ALNUM.sub('', name)
+
+    # Collapse repeated characters: "haaa" → "ha", "yeahhh" → "yeah"
+    name = _RE_REPEATED_CHARS.sub(r'\1\1', name)
+
     # Collapse multiple spaces
     name = _RE_MULTI_SPACE.sub(' ', name)
-
-    # Remove trailing punctuation/separators
-    name = _RE_TRAILING_JUNK.sub('', name)
 
     return name.strip()
 
@@ -281,30 +298,35 @@ def search_track(sp, artist, track):
 
 def dedup_playlist(tracks):
     """
-    Final cross-artist dedup pass on the assembled playlist.
-    Uses normalized track name + fuzzy containment per artist to catch:
-    - Same song from standard vs deluxe album
-    - Same song with different suffixes (extended, clean, etc.)
-    - Variant names where one contains the other ("you right" in "you right something")
-    Prefers the version with higher popularity.
+    Final dedup pass on the assembled playlist. Three layers:
+    1. URI dedup — same Spotify URI = same track, instant kill
+    2. Per-artist name dedup — same artist + similar track name
+    3. Cross-artist name dedup — same normalized track name regardless of artist
+       (catches covers, re-releases under different artist entries)
+    Prefers the version with higher popularity when dupes are found.
     """
-    # Group by artist for containment checks within same artist
+    seen_uris   = {}   # uri -> index in result list
     artist_seen = {}   # artist_lower -> set of normalized names
     artist_idx  = {}   # "artist::norm" -> index in result list
+    global_seen = {}   # norm_name -> index in result list (cross-artist)
     result = []
 
     for track in tracks:
+        uri = track.get("uri", "")
         norm_name = _normalize_track_name(track.get("name", ""))
         norm_artist = track.get("artist", "").lower().strip()
+
+        # Layer 1: URI dedup — identical Spotify track
+        if uri and uri in seen_uris:
+            continue
 
         if norm_artist not in artist_seen:
             artist_seen[norm_artist] = set()
 
-        # Check for exact or fuzzy duplicate within same artist
+        # Layer 2: Per-artist name dedup
         dup_key = _is_track_duplicate(norm_name, artist_seen[norm_artist])
 
         if dup_key is not None:
-            # We already have this track — keep the more popular one
             lookup = f"{norm_artist}::{dup_key}"
             if lookup in artist_idx:
                 existing_idx = artist_idx[lookup]
@@ -314,8 +336,22 @@ def dedup_playlist(tracks):
                     result[existing_idx] = track
             continue
 
+        # Layer 3: Cross-artist dedup — same song name from different artists
+        # (catches same song appearing via different search paths)
+        if norm_name in global_seen:
+            existing_idx = global_seen[norm_name]
+            existing_pop = result[existing_idx].get("popularity", 50)
+            new_pop = track.get("popularity", 50)
+            if new_pop > existing_pop:
+                result[existing_idx] = track
+            continue
+
+        # Track is unique — add it
+        if uri:
+            seen_uris[uri] = len(result)
         artist_seen[norm_artist].add(norm_name)
         artist_idx[f"{norm_artist}::{norm_name}"] = len(result)
+        global_seen[norm_name] = len(result)
         result.append(track)
 
     return result
