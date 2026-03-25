@@ -84,43 +84,109 @@ def get_playlist_artists_and_tracks(sp, playlist_id):
 
 import re
 
+_VARIANT_WORDS = (
+    r'remaster(ed)?|live(\s*(at|in|from)\s+\S.*)?'
+    r'|single(\s*version)?|radio\s*(edit|version|mix)|album\s*version'
+    r'|mono|stereo|\d{4}\s*(remaster|version|mix)'
+    r'|original\s*(mix|version)'
+    r'|extended(\s*(version|mix|cut))?'
+    r'|acoustic(\s*(version|mix))?'
+    r'|deluxe(\s*(edition|version))?'
+    r'|bonus\s*track'
+    r'|clean(\s*version)?|explicit(\s*version)?'
+    r'|demo(\s*version)?'
+    r'|instrumental(\s*(version|mix))?'
+    r'|remix|re-?mix'
+    r'|unplugged|stripped'
+    r'|sped\s*up|slowed(\s*(down|\+\s*reverb))?'
+    r'|from\s+["\u201c].*'
+    r'|feat\.?\s.*|ft\.?\s.*|featuring\s.*'
+)
+
+# Precompiled patterns for performance
+_RE_VARIANT_SUFFIX = re.compile(
+    r'\s*[-–—]\s*(' + _VARIANT_WORDS + r')[^)}\]]*$', re.IGNORECASE
+)
+_RE_VARIANT_PAREN = re.compile(
+    r'\s*[(\[]\s*(' + _VARIANT_WORDS + r')[^)}\]]*[)\]]', re.IGNORECASE
+)
+# Standalone variant word as a prefix: "Extended - You Right"
+_RE_VARIANT_PREFIX = re.compile(
+    r'^(' + _VARIANT_WORDS + r')\s*[-–—]\s*', re.IGNORECASE
+)
+_RE_TRAILING_JUNK = re.compile(r'[\s\-–—.,!?;:]+$')
+_RE_MULTI_SPACE = re.compile(r'\s{2,}')
+_RE_BARE_YEAR = re.compile(r'\s*[-–(]\s*\d{4}\s*\)?$')
+
+
 def _normalize_track_name(name):
     """
-    Strip variant suffixes for deduplication.
-    Catches: remasters, live, extended, acoustic, deluxe, bonus, clean/explicit,
-    featuring credits, and year tags.
+    Aggressively normalize a track name for dedup.
+    Strips: variant prefixes/suffixes, parenthetical tags, brackets,
+    punctuation, extra spaces, trailing years, and featured credits.
     """
     name = name.lower().strip()
 
-    # Remove anything in parentheses or after a dash that's a variant marker
-    variant_words = (
-        r'remaster(ed)?|live|single version|radio (edit|version|mix)|album version'
-        r'|mono|stereo|\d{4}\s*(remaster|version|mix)'
-        r'|original mix|original version'
-        r'|extended(\s*(version|mix|cut))?'
-        r'|acoustic(\s*version)?'
-        r'|deluxe(\s*(edition|version))?'
-        r'|bonus\s*track'
-        r'|clean(\s*version)?|explicit(\s*version)?'
-        r'|demo(\s*version)?'
-        r'|instrumental(\s*version)?'
-        r'|remix|re-?mix'
-        r'|from\s+["\u201c].*'           # "from Movie Soundtrack"
-        r'|feat\.?\s.*|ft\.?\s.*'         # strip featuring credits
-    )
-    # Match "- Suffix", "(Suffix)", or "[Suffix]"
-    name = re.sub(
-        r'\s*[-–—]\s*(' + variant_words + r')[^)}\]]*$',
-        '', name, flags=re.IGNORECASE
-    )
-    name = re.sub(
-        r'\s*[(\[]\s*(' + variant_words + r')[^)}\]]*[)\]]',
-        '', name, flags=re.IGNORECASE
-    )
+    # Strip prefix variants: "Extended - You Right" → "You Right"
+    name = _RE_VARIANT_PREFIX.sub('', name)
 
-    # Remove trailing whitespace/punctuation left behind
-    name = re.sub(r'[\s\-–—]+$', '', name)
+    # Strip suffix variants: "You Right - Extended" → "You Right"
+    name = _RE_VARIANT_SUFFIX.sub('', name)
+
+    # Strip parenthetical/bracket variants: "You Right (Deluxe)" → "You Right"
+    name = _RE_VARIANT_PAREN.sub('', name)
+
+    # Strip bare trailing year: "Song - 2024" or "Song (2024)"
+    name = _RE_BARE_YEAR.sub('', name)
+
+    # Collapse multiple spaces
+    name = _RE_MULTI_SPACE.sub(' ', name)
+
+    # Remove trailing punctuation/separators
+    name = _RE_TRAILING_JUNK.sub('', name)
+
     return name.strip()
+
+
+def _is_track_duplicate(norm_new, existing_norms):
+    """
+    Check if a normalized track name is a duplicate of any existing one.
+    Uses exact match first, then a startswith/endswith containment check
+    for edge cases the normalizer missed.
+    Returns the matching key if duplicate, None otherwise.
+    """
+    # Exact match first (covers 99% of cases after normalization)
+    if norm_new in existing_norms:
+        return norm_new
+
+    # Containment safety net for things the normalizer didn't catch.
+    # Only triggers if one name STARTS or ENDS with the other, AND
+    # the leftover part is at most 2 short words (likely an unrecognized tag).
+    if len(norm_new) >= 5:
+        for existing in existing_norms:
+            if len(existing) < 5:
+                continue
+            shorter, longer = (norm_new, existing) if len(norm_new) <= len(existing) else (existing, norm_new)
+
+            # Must start or end with the shorter name
+            if not (longer.startswith(shorter) or longer.endswith(shorter)):
+                continue
+
+            # Check that the leftover is short — likely a missed variant tag,
+            # not a genuinely different song title
+            if longer.startswith(shorter):
+                leftover = longer[len(shorter):].strip(' -')
+            else:
+                leftover = longer[:len(longer)-len(shorter)].strip(' -')
+
+            leftover_words = leftover.split()
+            # At most 2 leftover words, and shorter name must be >= 2 words
+            # (avoids "Stay" matching "Stay With Me" but catches
+            #  "You Right" matching "You Right Special Cut")
+            if len(leftover_words) <= 2 and len(shorter.split()) >= 2:
+                return existing
+
+    return None
 
 def search_artist_tracks(sp, artist_name, count=3, deep_cuts=False):
     """
@@ -154,7 +220,7 @@ def search_artist_tracks(sp, artist_name, count=3, deep_cuts=False):
                 continue
 
             norm = _normalize_track_name(t["name"])
-            if norm not in seen:
+            if not _is_track_duplicate(norm, seen):
                 seen.add(norm)
                 found.append({
                     "uri": t["uri"],
@@ -179,7 +245,7 @@ def search_artist_tracks(sp, artist_name, count=3, deep_cuts=False):
                 if t.get("popularity", 50) > 50:
                     continue
                 norm = _normalize_track_name(t["name"])
-                if norm not in seen:
+                if not _is_track_duplicate(norm, seen):
                     seen.add(norm)
                     found.append({
                         "uri": t["uri"],
@@ -216,30 +282,40 @@ def search_track(sp, artist, track):
 def dedup_playlist(tracks):
     """
     Final cross-artist dedup pass on the assembled playlist.
-    Uses normalized track name + normalized artist to catch:
+    Uses normalized track name + fuzzy containment per artist to catch:
     - Same song from standard vs deluxe album
     - Same song with different suffixes (extended, clean, etc.)
-    - Covers that appear under different artist spellings
-    Prefers the version with higher popularity (or first seen if no popularity data).
+    - Variant names where one contains the other ("you right" in "you right something")
+    Prefers the version with higher popularity.
     """
-    seen = {}  # normalized key -> index in result list
+    # Group by artist for containment checks within same artist
+    artist_seen = {}   # artist_lower -> set of normalized names
+    artist_idx  = {}   # "artist::norm" -> index in result list
     result = []
 
     for track in tracks:
         norm_name = _normalize_track_name(track.get("name", ""))
         norm_artist = track.get("artist", "").lower().strip()
-        key = f"{norm_artist}::{norm_name}"
 
-        if key in seen:
+        if norm_artist not in artist_seen:
+            artist_seen[norm_artist] = set()
+
+        # Check for exact or fuzzy duplicate within same artist
+        dup_key = _is_track_duplicate(norm_name, artist_seen[norm_artist])
+
+        if dup_key is not None:
             # We already have this track — keep the more popular one
-            existing_idx = seen[key]
-            existing_pop = result[existing_idx].get("popularity", 50)
-            new_pop = track.get("popularity", 50)
-            if new_pop > existing_pop:
-                result[existing_idx] = track  # replace with more popular version
+            lookup = f"{norm_artist}::{dup_key}"
+            if lookup in artist_idx:
+                existing_idx = artist_idx[lookup]
+                existing_pop = result[existing_idx].get("popularity", 50)
+                new_pop = track.get("popularity", 50)
+                if new_pop > existing_pop:
+                    result[existing_idx] = track
             continue
 
-        seen[key] = len(result)
+        artist_seen[norm_artist].add(norm_name)
+        artist_idx[f"{norm_artist}::{norm_name}"] = len(result)
         result.append(track)
 
     return result
