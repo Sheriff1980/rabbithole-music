@@ -18,7 +18,7 @@
       <a href="/dashboard" class="btn-outline" title="Start a new discovery">
         ← New Playlist
       </a>
-      <button onclick="reroll()" class="btn-outline" title="Keep same seed, generate a fresh batch">
+      <button onclick="reroll()" class="btn-outline" title="Same settings, generate a fresh batch">
         ↺ Re-roll
       </button>
       {% if not spotify_id %}
@@ -91,7 +91,7 @@
         <div class="nerd-stats hidden mt-1 flex flex-wrap gap-2 text-xs">
           {% if track.provenance %}
             {% if track.provenance.seed_artist %}
-            <span class="bg-purple-950 text-purple-300 px-2 py-0.5 rounded-full">Seed: {{ track.provenance.seed_artist }}</span>
+            <span class="bg-purple-950 text-purple-300 px-2 py-0.5 rounded-full">From: {{ track.provenance.seed_artist }}</span>
             {% endif %}
             {% if track.provenance.source %}
             <span class="bg-blue-950 text-blue-300 px-2 py-0.5 rounded-full">{{ track.provenance.source }}</span>
@@ -313,7 +313,7 @@ document.getElementById("track-list").addEventListener("dragover", function(e) {
 // ── Re-roll ──────────────────────────────────────────────────────────────────
 
 function reroll() {
-  if (!confirm("Generate a fresh playlist with the same seed and settings?")) return;
+  if (!confirm("Generate a fresh playlist with the same settings?")) return;
   fetch("/generate/reroll/" + playlistId, { method: "POST" })
     .then(r => r.json())
     .then(data => {

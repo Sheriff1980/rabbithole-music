@@ -135,7 +135,7 @@ function toggleRefresh(playlistId, btn) {
 }
 
 function reroll(playlistId, btn) {
-  if (!confirm("Generate a fresh playlist with the same seed and settings?")) return;
+  if (!confirm("Generate a fresh playlist with the same settings?")) return;
   btn.textContent = "…";
   btn.disabled = true;
   fetch("/generate/reroll/" + playlistId, { method: "POST" })
