@@ -7,7 +7,8 @@ from ..auth import get_spotify_client
 from ..models import get_conn, engine
 from ..discover import run_discovery, get_genre_seed_artists
 from ..playlist import (get_liked_artists_and_tracks, get_playlist_artists_and_tracks,
-                         search_artist_tracks, search_track, push_to_spotify, dedup_playlist)
+                         search_artist_tracks, search_track, push_to_spotify, dedup_playlist,
+                         search_covers)
 from ..models import engine as db_engine
 from ..utils import csrf_required, decrypt_token
 from ..limiter import limiter
@@ -44,11 +45,30 @@ def _get_user_feedback(user_id):
 def run_discovery_background(job_id, user_id, seed_type, access_token,
                               excluded_genres=None, playlist_size=60,
                               adventurousness=3, genre_spread=3,
-                              deep_cuts=0, surprise_me=0):
+                              deep_cuts=0, surprise_me=0, covers=0):
     """Runs discovery in a background thread, updates DB when done."""
     import spotipy
     sp = spotipy.Spotify(auth=access_token)
     try:
+        # ── COVERS MODE: completely different pipeline ──────────────────────
+        if covers and seed_type.startswith("artist:"):
+            artist_name = seed_type[7:]
+            set_progress(job_id, 10, f"Finding covers of {artist_name}...")
+
+            def progress_fn(pct, msg):
+                set_progress(job_id, pct, msg)
+
+            found = search_covers(sp, artist_name, playlist_size=playlist_size,
+                                  progress_fn=progress_fn)
+            found = dedup_playlist(found)
+
+            set_progress(job_id, 95, "Almost done...")
+            with engine.connect() as conn:
+                conn.execute(text("UPDATE playlists SET status='done', track_data=:tracks, progress=100 WHERE id=:id"),
+                             {"tracks": json.dumps(found), "id": job_id})
+                conn.commit()
+            return
+
         set_progress(job_id, 10, "Reading your library...")
         if seed_type == "liked":
             liked_artists, liked_tracks = get_liked_artists_and_tracks(sp, user_id=user_id, engine=db_engine)
@@ -192,12 +212,15 @@ def start():
     genre_spread    = min(5,   max(1,  int(request.form.get("genre_spread",      3))))
     deep_cuts       = min(1,   max(0,  int(request.form.get("deep_cuts",         0))))
     surprise_me     = min(1,   max(0,  int(request.form.get("surprise_me",       0))))
+    covers          = min(1,   max(0,  int(request.form.get("covers",            0))))
 
     # Build title with feature tags
     base_name = seed_name
     if surprise_me and not seed_type.startswith("artist:") and not seed_type.startswith("genre:"):
         base_name = "Surprise Mix"
     title = custom_name if custom_name else f"Rabbithole - {base_name}"
+    if covers and not custom_name:
+        title += " (Covers)"
     if deep_cuts and not custom_name:
         title += " (Deep Cuts)"
     if surprise_me and not custom_name:
@@ -210,15 +233,15 @@ def start():
             INSERT INTO playlists
               (id, owner_id, title, seed_type, seed_name, track_data, status,
                excluded_genres, playlist_size, adventurousness, genre_spread,
-               deep_cuts, surprise_me)
+               deep_cuts, surprise_me, covers)
             VALUES (:id, :owner, :title, :stype, :sname, :tracks, 'pending',
-                    :excl, :psize, :adv, :spread, :dc, :sm)
+                    :excl, :psize, :adv, :spread, :dc, :sm, :cov)
         """), {
             "id": playlist_id, "owner": session["user_id"], "title": title,
             "stype": seed_type, "sname": seed_name, "tracks": "[]",
             "excl": ",".join(excluded_genres),
             "psize": playlist_size, "adv": adventurousness, "spread": genre_spread,
-            "dc": deep_cuts, "sm": surprise_me,
+            "dc": deep_cuts, "sm": surprise_me, "cov": covers,
         })
         conn.commit()
 
@@ -262,7 +285,8 @@ def poll(job_id):
         conn.execute(text("UPDATE playlists SET status='running' WHERE id=:id"), {"id": job_id})
         row2 = conn.execute(
             text("""SELECT u.access_token, p.excluded_genres, p.playlist_size,
-                           p.adventurousness, p.genre_spread, p.deep_cuts, p.surprise_me
+                           p.adventurousness, p.genre_spread, p.deep_cuts, p.surprise_me,
+                           p.covers
                     FROM users u JOIN playlists p ON p.owner_id=u.id WHERE p.id=:jid"""),
             {"jid": job_id}
         ).fetchone()
@@ -275,10 +299,11 @@ def poll(job_id):
     spread        = row2[4] if row2 else 3
     dc            = row2[5] if row2 else 0
     sm            = row2[6] if row2 else 0
+    cov           = row2[7] if row2 else 0
 
     t = threading.Thread(target=run_discovery_background,
                          args=(job_id, session["user_id"], seed_type, access_token,
-                               excl, psize, adv, spread, dc, sm),
+                               excl, psize, adv, spread, dc, sm, cov),
                          daemon=True)
     t.start()
     return jsonify({"status": "running", "message": "Discovery started, searching for music..."})
@@ -352,7 +377,7 @@ def reroll(playlist_id):
         row = conn.execute(
             text("""SELECT seed_type, seed_name, excluded_genres,
                            playlist_size, adventurousness, genre_spread,
-                           deep_cuts, surprise_me
+                           deep_cuts, surprise_me, covers
                     FROM playlists WHERE id=:id AND owner_id=:uid"""),
             {"id": playlist_id, "uid": session["user_id"]}
         ).fetchone()
@@ -360,7 +385,7 @@ def reroll(playlist_id):
     if not row:
         return jsonify({"ok": False})
 
-    seed_type, seed_name, excl, psize, adv, spread, dc, sm = row
+    seed_type, seed_name, excl, psize, adv, spread, dc, sm, cov = row
     new_id = str(uuid.uuid4())
 
     with get_conn() as conn:
@@ -368,15 +393,15 @@ def reroll(playlist_id):
             INSERT INTO playlists
               (id, owner_id, title, seed_type, seed_name, track_data, status,
                excluded_genres, playlist_size, adventurousness, genre_spread,
-               deep_cuts, surprise_me)
+               deep_cuts, surprise_me, covers)
             VALUES (:id, :owner, :title, :stype, :sname, '[]', 'pending',
-                    :excl, :psize, :adv, :spread, :dc, :sm)
+                    :excl, :psize, :adv, :spread, :dc, :sm, :cov)
         """), {
             "id": new_id, "owner": session["user_id"],
             "title": f"Rabbithole - {seed_name} (Re-roll)",
             "stype": seed_type, "sname": seed_name,
             "excl": excl, "psize": psize, "adv": adv, "spread": spread,
-            "dc": dc or 0, "sm": sm or 0,
+            "dc": dc or 0, "sm": sm or 0, "cov": cov or 0,
         })
         conn.commit()
 
@@ -390,7 +415,7 @@ def reroll(playlist_id):
     t = threading.Thread(
         target=run_discovery_background,
         args=(new_id, session["user_id"], seed_type, decrypt_token(token_row[0]),
-              excl_list, psize, adv, spread, dc or 0, sm or 0),
+              excl_list, psize, adv, spread, dc or 0, sm or 0, cov or 0),
         daemon=True
     )
     t.start()

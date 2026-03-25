@@ -105,6 +105,9 @@
             {% if track.provenance.track_type %}
             <span class="bg-amber-950 text-amber-300 px-2 py-0.5 rounded-full">{{ track.provenance.track_type }}</span>
             {% endif %}
+            {% if track.provenance.original_song %}
+            <span class="bg-pink-950 text-pink-300 px-2 py-0.5 rounded-full">Cover of: {{ track.provenance.original_song }}</span>
+            {% endif %}
           {% endif %}
           {% if track.popularity is defined %}
           <span class="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">Pop: {{ track.popularity }}/100</span>

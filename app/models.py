@@ -119,8 +119,8 @@ def init_db():
         """))
         conn.commit()
 
-        # Migration: add deep_cuts and surprise_me columns if missing
-        for col in ("deep_cuts", "surprise_me"):
+        # Migration: add deep_cuts, surprise_me, covers columns if missing
+        for col in ("deep_cuts", "surprise_me", "covers"):
             try:
                 conn.execute(text(f"ALTER TABLE playlists ADD COLUMN {col} INTEGER DEFAULT 0"))
                 conn.commit()
