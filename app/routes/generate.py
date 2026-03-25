@@ -8,7 +8,7 @@ from ..models import get_conn, engine
 from ..discover import run_discovery, get_genre_seed_artists
 from ..playlist import (get_liked_artists_and_tracks, get_playlist_artists_and_tracks,
                          search_artist_tracks, search_track, push_to_spotify, dedup_playlist,
-                         search_covers)
+                         search_covers, search_random_covers)
 from ..models import engine as db_engine
 from ..utils import csrf_required, decrypt_token
 from ..limiter import limiter
@@ -51,15 +51,20 @@ def run_discovery_background(job_id, user_id, seed_type, access_token,
     sp = spotipy.Spotify(auth=access_token)
     try:
         # ── COVERS MODE: completely different pipeline ──────────────────────
-        if covers and seed_type.startswith("artist:"):
-            artist_name = seed_type[7:]
-            set_progress(job_id, 10, f"Finding covers of {artist_name}...")
-
+        if covers:
             def progress_fn(pct, msg):
                 set_progress(job_id, pct, msg)
 
-            found = search_covers(sp, artist_name, playlist_size=playlist_size,
-                                  progress_fn=progress_fn)
+            if seed_type.startswith("artist:"):
+                artist_name = seed_type[7:]
+                set_progress(job_id, 10, f"Finding covers of {artist_name}...")
+                found = search_covers(sp, artist_name, playlist_size=playlist_size,
+                                      progress_fn=progress_fn)
+            else:
+                set_progress(job_id, 10, "Picking legendary artists to find covers of...")
+                found = search_random_covers(sp, playlist_size=playlist_size,
+                                             progress_fn=progress_fn)
+
             found = dedup_playlist(found)
 
             set_progress(job_id, 95, "Almost done...")
@@ -218,6 +223,8 @@ def start():
     base_name = seed_name
     if surprise_me and not seed_type.startswith("artist:") and not seed_type.startswith("genre:"):
         base_name = "Surprise Mix"
+    if covers and not seed_type.startswith("artist:") and not custom_name:
+        base_name = "Cover Song Grab Bag"
     title = custom_name if custom_name else f"Rabbithole - {base_name}"
     if covers and not custom_name:
         title += " (Covers)"

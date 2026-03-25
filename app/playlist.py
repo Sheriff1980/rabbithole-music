@@ -419,6 +419,60 @@ def search_covers(sp, artist_name, playlist_size=60, progress_fn=None):
         return []
 
 
+def search_random_covers(sp, playlist_size=60, progress_fn=None):
+    """
+    Surprise covers — pick random well-known artists and find covers of their songs.
+    Creates a grab bag of covers spanning multiple genres.
+    """
+    import logging
+    import random
+    logger = logging.getLogger(__name__)
+
+    # Diverse pool of well-known artists people love to cover
+    COVERABLE_ARTISTS = [
+        "The Beatles", "Fleetwood Mac", "Queen", "David Bowie", "Prince",
+        "Nirvana", "Radiohead", "Led Zeppelin", "Johnny Cash", "Dolly Parton",
+        "Whitney Houston", "Aretha Franklin", "Michael Jackson", "Stevie Wonder",
+        "Bob Dylan", "The Rolling Stones", "Elton John", "Adele", "Amy Winehouse",
+        "Coldplay", "Foo Fighters", "Red Hot Chili Peppers", "U2", "Metallica",
+        "Eagles", "Pink Floyd", "Bon Jovi", "AC/DC", "Guns N' Roses",
+        "Tina Turner", "Cher", "Madonna", "Cyndi Lauper", "Blondie",
+        "Leonard Cohen", "Simon & Garfunkel", "Carole King", "James Taylor",
+        "Billie Holiday", "Frank Sinatra", "Ella Fitzgerald", "Ray Charles",
+        "Otis Redding", "Sam Cooke", "Marvin Gaye", "Al Green",
+        "Talking Heads", "The Cure", "Depeche Mode", "Joy Division",
+        "Pixies", "R.E.M.", "The Smiths", "Oasis",
+        "Taylor Swift", "Billie Eilish", "Lana Del Rey", "Hozier",
+    ]
+
+    random.shuffle(COVERABLE_ARTISTS)
+
+    # Pick 8-12 random artists to pull covers from
+    num_artists = min(12, max(8, playlist_size // 5))
+    selected_artists = COVERABLE_ARTISTS[:num_artists]
+
+    if progress_fn:
+        progress_fn(15, f"Picking {num_artists} legendary artists to find covers of...")
+
+    all_found = []
+    per_artist_target = max(5, playlist_size // num_artists + 2)
+
+    for idx, artist_name in enumerate(selected_artists):
+        if len(all_found) >= playlist_size:
+            break
+
+        if progress_fn:
+            pct = 15 + int(75 * (idx + 1) / num_artists)
+            progress_fn(pct, f"Finding covers of {artist_name}...")
+
+        covers = search_covers(sp, artist_name, playlist_size=per_artist_target)
+        all_found.extend(covers)
+
+    # Shuffle so it's not clustered by original artist
+    random.shuffle(all_found)
+    return all_found[:playlist_size]
+
+
 def dedup_playlist(tracks):
     """
     Final dedup pass on the assembled playlist. Three layers:

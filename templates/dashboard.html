@@ -231,14 +231,7 @@
 
 <script>
 function validateForm() {
-  if (document.getElementById('covers').value === '1') {
-    const seedType = document.getElementById('seed_type').value;
-    if (!seedType.startsWith('artist:')) {
-      alert('Covers mode requires an artist! Search for an artist above first.');
-      document.getElementById('artist-search').focus();
-      return false;
-    }
-  }
+  // No validation needed — covers works with or without an artist now
   return true;
 }
 
@@ -302,11 +295,11 @@ function toggleCovers() {
     label.classList.add('text-pink-400');
     label.classList.remove('text-gray-500');
 
-    // Covers requires an artist — nudge user if none selected
+    // Hint: with an artist you get covers of their songs,
+    // without one you get a random grab bag of covers
     const seedType = document.getElementById('seed_type').value;
     if (!seedType.startsWith('artist:')) {
-      document.getElementById('artist-search').focus();
-      document.getElementById('artist-search').placeholder = 'Search for an artist to find covers of...';
+      document.getElementById('artist-search').placeholder = 'Pick an artist for targeted covers, or just hit go for a surprise mix!';
     }
   }
 }
