@@ -37,6 +37,8 @@
     .btn-kofi:hover { background: #ff7370; transform: scale(1.04); }
     .btn-kofi svg { flex-shrink: 0; }
     .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+    .feat-song:hover .feat-play-icon:not(.hidden) { opacity: 1 !important; }
+    .feat-pause-icon.opacity-100 { opacity: 1 !important; }
   </style>
   <!-- CSRF token — read by the fetch interceptor below -->
   <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -110,25 +112,31 @@
         <p class="text-gray-400 text-xs line-clamp-1">{{ featured_artist.bio }}</p>
         {% endif %}
       </div>
-      <!-- Songs -->
+      <!-- Songs (with inline preview playback) -->
       <div class="hidden md:flex items-center gap-3 flex-shrink-0">
         {% for song in featured_artist.songs[:3] %}
-        <div class="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 hover:bg-white/10 transition">
+        <button type="button" onclick="playFeaturedPreview(this, '{{ song.preview_url or '' }}')"
+                class="feat-song flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 hover:bg-white/10 transition cursor-pointer border-0 outline-none"
+                title="{{ song.name }}">
           {% if song.album_art %}
-          <img src="{{ song.album_art }}" class="w-7 h-7 rounded-sm">
+          <div class="relative w-7 h-7 flex-shrink-0">
+            <img src="{{ song.album_art }}" class="w-7 h-7 rounded-sm">
+            <div class="feat-play-icon absolute inset-0 flex items-center justify-center bg-black/40 rounded-sm opacity-0 transition-opacity">
+              <svg class="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div class="feat-pause-icon absolute inset-0 flex items-center justify-center bg-black/40 rounded-sm opacity-0 transition-opacity hidden">
+              <svg class="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
+            </div>
+          </div>
           {% endif %}
           <div class="max-w-[120px]">
-            <div class="text-white text-xs font-semibold truncate">{{ song.name }}</div>
+            <div class="text-white text-xs font-semibold truncate text-left">{{ song.name }}</div>
           </div>
-          {% if song.spotify_uri %}
-          <a href="https://open.spotify.com/track/{{ song.spotify_uri.split(':')[-1] }}" target="_blank" rel="noopener"
-             class="text-green-500 hover:text-green-400 ml-1" title="Play on Spotify">
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-          </a>
-          {% endif %}
-        </div>
+        </button>
         {% endfor %}
       </div>
+      <!-- Hidden audio element for featured preview -->
+      <audio id="feat-audio" preload="none"></audio>
       <!-- Spotify link -->
       {% if featured_artist.uri %}
       <a href="https://open.spotify.com/artist/{{ featured_artist.uri.split(':')[-1] }}" target="_blank" rel="noopener"
@@ -145,6 +153,74 @@
   </main>
 
   <script>
+    // ── Featured Artist inline preview player ──
+    var _featAudio = null;
+    var _featActive = null;
+
+    function playFeaturedPreview(btn, url) {
+      if (!_featAudio) _featAudio = document.getElementById('feat-audio');
+      if (!url) return;
+
+      // If clicking the same song that's playing, toggle pause
+      if (_featActive === btn && !_featAudio.paused) {
+        _featAudio.pause();
+        _featShowState(btn, 'play');
+        return;
+      }
+
+      // Stop any currently playing song
+      if (_featActive && _featActive !== btn) {
+        _featShowState(_featActive, 'play');
+      }
+
+      _featActive = btn;
+      _featAudio.src = url;
+      _featAudio.volume = 0.5;
+      _featAudio.play();
+      _featShowState(btn, 'pause');
+
+      // When clip ends, reset icon
+      _featAudio.onended = function() {
+        _featShowState(btn, 'play');
+        _featActive = null;
+      };
+    }
+
+    function _featShowState(btn, state) {
+      var playIcon = btn.querySelector('.feat-play-icon');
+      var pauseIcon = btn.querySelector('.feat-pause-icon');
+      if (!playIcon || !pauseIcon) return;
+      if (state === 'pause') {
+        // Song is playing — show pause icon
+        playIcon.classList.add('hidden');
+        playIcon.classList.remove('opacity-100');
+        pauseIcon.classList.remove('hidden');
+        pauseIcon.classList.add('opacity-100');
+      } else {
+        // Song is paused/stopped — show play icon on hover
+        pauseIcon.classList.add('hidden');
+        pauseIcon.classList.remove('opacity-100');
+        playIcon.classList.remove('hidden');
+        playIcon.classList.remove('opacity-100');
+      }
+    }
+
+    // Show play icon on hover for song buttons
+    document.querySelectorAll('.feat-song').forEach(function(btn) {
+      btn.addEventListener('mouseenter', function() {
+        if (_featActive !== btn || (_featAudio && _featAudio.paused)) {
+          var pi = btn.querySelector('.feat-play-icon');
+          if (pi && !pi.classList.contains('hidden')) pi.classList.add('opacity-100');
+        }
+      });
+      btn.addEventListener('mouseleave', function() {
+        if (_featActive !== btn || (_featAudio && _featAudio.paused)) {
+          var pi = btn.querySelector('.feat-play-icon');
+          if (pi) pi.classList.remove('opacity-100');
+        }
+      });
+    });
+
     // Global fetch interceptor — automatically attaches the CSRF token to every
     // non-GET request so individual templates don't have to think about it.
     (function () {
