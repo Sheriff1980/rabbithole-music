@@ -173,6 +173,7 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
         progress_fn(35, f"Checking {len(sampled)} seed artists...")
 
     # Breadth-first: take at most N suggestions from each seed artist
+    # candidates are dicts with provenance info: {name, seed_artist, degree, source}
     max_per_seed = 3 if surprise_me else 2
     candidates = []
     seen_candidates = set()
@@ -186,12 +187,16 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
                 continue
             if s_lower in voted_disliked:
                 continue
-            candidates.append(s)
+            candidates.append({
+                "name": s,
+                "seed_artist": artist,
+                "degree": 1,
+                "source": "similar artist",
+            })
             seen_candidates.add(s_lower)
             added += 1
             if added >= max_per_seed:
                 break
-        # Only sleep every 3rd call — Last.fm allows 5 req/sec
         if i % 3 == 2:
             time.sleep(0.1)
 
@@ -199,15 +204,19 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
     if surprise_me:
         if progress_fn:
             progress_fn(45, "Going deeper... 2nd-degree expansion")
-        # Take top 12 candidates (not 20) for speed
         second_degree_seeds = candidates[:12]
-        for i, artist in enumerate(second_degree_seeds):
-            similar = get_similar_artists(artist, limit=5)
+        for i, cand in enumerate(second_degree_seeds):
+            similar = get_similar_artists(cand["name"], limit=5)
             for s in similar:
                 s_lower = s.lower()
                 if s_lower not in seen_candidates and s_lower not in liked_artists:
                     if s_lower not in voted_disliked:
-                        candidates.append(s)
+                        candidates.append({
+                            "name": s,
+                            "seed_artist": cand["name"],
+                            "degree": 2,
+                            "source": "2nd-degree",
+                        })
                         seen_candidates.add(s_lower)
             if i % 3 == 2:
                 time.sleep(0.1)
@@ -219,49 +228,58 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
         progress_fn(50, f"Filtering {len(candidates)} candidates by genre...")
 
     # Apply genre diversity cap + exclusions
-    # Cap how many candidates we'll tag to avoid slow loops
-    max_to_check = target_artists * 4  # check at most 4x what we need
+    max_to_check = target_artists * 4
     genre_counts = {}
-    filtered = []
+    filtered = []  # list of dicts with provenance + genre/tags
 
-    for i, artist_name in enumerate(candidates[:max_to_check]):
+    for i, cand in enumerate(candidates[:max_to_check]):
         if len(filtered) >= target_artists:
             break
 
-        # Hard block — user thumbed this artist down before
+        artist_name = cand["name"]
         if artist_name.lower() in voted_disliked:
             continue
 
         tags = get_artist_tags(artist_name)
         genre = classify_genre(tags)
-        # Only sleep every 4th call
         if i % 4 == 3:
             time.sleep(0.1)
 
-        # Skip explicitly excluded genres
         if genre in excluded_genres:
             continue
         if any(ex in tag for ex in excluded_genres for tag in tags):
             continue
 
-        # Cap per genre for diversity (default max 3 per genre family)
         if genre != "other" and genre_counts.get(genre, 0) >= max_per_genre:
             continue
 
         genre_counts[genre] = genre_counts.get(genre, 0) + 1
-        filtered.append(artist_name)
+        cand["genre"] = genre
+        cand["tags"] = tags[:5]
+        filtered.append(cand)
 
     if progress_fn:
         progress_fn(60, f"Getting tracks for {len(filtered)} artists...")
 
-    # Get tracks for each filtered artist
+    # Get tracks for each filtered artist, carrying provenance
     discoveries = []
-    for i, artist_name in enumerate(filtered):
+    for i, cand in enumerate(filtered):
+        artist_name = cand["name"]
         tracks = get_top_tracks(artist_name, count=tracks_per_artist, deep_cuts=deep_cuts)
         for t in tracks:
             key = f"{artist_name.lower()} - {t.lower()}"
             if key not in liked_track_keys:
-                discoveries.append({"artist": artist_name, "track": t})
+                discoveries.append({
+                    "artist": artist_name,
+                    "track": t,
+                    "provenance": {
+                        "seed_artist": cand.get("seed_artist", ""),
+                        "degree": cand.get("degree", 1),
+                        "source": cand.get("source", "similar artist"),
+                        "genre": cand.get("genre", "other"),
+                        "tags": cand.get("tags", []),
+                    }
+                })
         if i % 3 == 2:
             time.sleep(0.1)
 

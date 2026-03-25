@@ -37,6 +37,14 @@
       {% else %}
       <span class="btn-outline opacity-50 cursor-default">Shared ✓</span>
       {% endif %}
+      {% if spotify_id %}
+      <button onclick="copyPlaylistLink()" id="copy-link-btn" class="btn-outline" title="Copy Spotify link to clipboard">
+        📋 Copy Link
+      </button>
+      {% endif %}
+      <button onclick="toggleNerdStats()" id="nerd-btn" class="btn-outline text-xs" title="See why each track was picked">
+        🤓 Stats for Nerds
+      </button>
     </div>
   </div>
 
@@ -79,6 +87,29 @@
       <div class="flex-1 min-w-0">
         <div class="font-semibold truncate">{{ track.name or track.track }}</div>
         <div class="text-gray-400 text-sm truncate">{{ track.artist }} · {{ track.album or '' }}</div>
+        <!-- Nerd stats (hidden by default) -->
+        <div class="nerd-stats hidden mt-1 flex flex-wrap gap-2 text-xs">
+          {% if track.provenance %}
+            {% if track.provenance.seed_artist %}
+            <span class="bg-purple-950 text-purple-300 px-2 py-0.5 rounded-full">Seed: {{ track.provenance.seed_artist }}</span>
+            {% endif %}
+            {% if track.provenance.source %}
+            <span class="bg-blue-950 text-blue-300 px-2 py-0.5 rounded-full">{{ track.provenance.source }}</span>
+            {% endif %}
+            {% if track.provenance.genre and track.provenance.genre != 'other' %}
+            <span class="bg-green-950 text-green-300 px-2 py-0.5 rounded-full">{{ track.provenance.genre }}</span>
+            {% endif %}
+            {% if track.provenance.degree is defined %}
+            <span class="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">{{ track.provenance.degree }}° connection</span>
+            {% endif %}
+            {% if track.provenance.track_type %}
+            <span class="bg-amber-950 text-amber-300 px-2 py-0.5 rounded-full">{{ track.provenance.track_type }}</span>
+            {% endif %}
+          {% endif %}
+          {% if track.popularity is defined %}
+          <span class="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">Pop: {{ track.popularity }}/100</span>
+          {% endif %}
+        </div>
       </div>
 
       <!-- Thumbs + More like this -->
@@ -354,6 +385,30 @@ function publishPlaylist() {
         btn.classList.add("opacity-50");
       }
     });
+}
+
+// ── Copy Playlist Link ───────────────────────────────────────────────────────
+
+function copyPlaylistLink() {
+  var url = "https://open.spotify.com/playlist/{{ spotify_id or '' }}";
+  navigator.clipboard.writeText(url).then(function() {
+    var btn = document.getElementById("copy-link-btn");
+    btn.textContent = "✓ Copied!";
+    setTimeout(function() { btn.innerHTML = "📋 Copy Link"; }, 2000);
+  });
+}
+
+// ── Stats for Nerds Toggle ──────────────────────────────────────────────────
+
+function toggleNerdStats() {
+  var stats = document.querySelectorAll(".nerd-stats");
+  var btn = document.getElementById("nerd-btn");
+  var showing = stats[0] && !stats[0].classList.contains("hidden");
+  stats.forEach(function(el) {
+    if (showing) el.classList.add("hidden");
+    else el.classList.remove("hidden");
+  });
+  btn.innerHTML = showing ? "🤓 Stats for Nerds" : "🤓 Hide Stats";
 }
 </script>
 {% endblock %}

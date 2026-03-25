@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Discovery Stats - Rabbithole Music{% endblock %}
+{% block content %}
+
+<div class="max-w-5xl mx-auto px-6 py-10">
+
+  <div class="mb-8">
+    <p class="text-green-500 font-semibold text-sm uppercase tracking-widest mb-2">Your Discovery Journey</p>
+    <h1 class="text-4xl font-black">Stats for Nerds</h1>
+    <p class="text-gray-400 mt-2">Everything we've uncovered together.</p>
+  </div>
+
+  <!-- Big number cards -->
+  <div class="grid grid-cols-3 gap-6 mb-10">
+    <div class="card p-6 text-center">
+      <div class="text-4xl font-black text-green-400">{{ total_playlists }}</div>
+      <div class="text-gray-400 text-sm mt-1">Playlists Created</div>
+    </div>
+    <div class="card p-6 text-center">
+      <div class="text-4xl font-black text-purple-400">{{ total_artists }}</div>
+      <div class="text-gray-400 text-sm mt-1">Unique Artists Discovered</div>
+    </div>
+    <div class="card p-6 text-center">
+      <div class="text-4xl font-black text-blue-400">{{ total_tracks }}</div>
+      <div class="text-gray-400 text-sm mt-1">Total Tracks Found</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-8">
+
+    <!-- Genre Breakdown -->
+    <div class="card p-6">
+      <h2 class="text-lg font-bold mb-4 text-gray-200">Genre Breakdown</h2>
+      {% if genre_data %}
+        {% set max_genre = genre_data[0][1] if genre_data else 1 %}
+        {% for genre, count in genre_data %}
+        <div class="mb-3">
+          <div class="flex justify-between text-sm mb-1">
+            <span class="text-gray-300 capitalize">{{ genre }}</span>
+            <span class="text-gray-500">{{ count }} tracks</span>
+          </div>
+          <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div class="h-full bg-green-500 rounded-full" style="width: {{ (count / max_genre * 100)|int }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-gray-500 text-sm">Generate some playlists to see genre data here.</p>
+      {% endif %}
+    </div>
+
+    <!-- Most Discovered Artists -->
+    <div class="card p-6">
+      <h2 class="text-lg font-bold mb-4 text-gray-200">Most Discovered Artists</h2>
+      {% if top_artists %}
+        {% for artist, count in top_artists %}
+        <div class="flex items-center justify-between py-2 {% if not loop.last %}border-b border-gray-800{% endif %}">
+          <div class="flex items-center gap-3">
+            <span class="text-gray-600 text-xs w-6 text-right">{{ loop.index }}</span>
+            <span class="text-gray-200 text-sm">{{ artist }}</span>
+          </div>
+          <span class="text-gray-500 text-xs">{{ count }} tracks</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-gray-500 text-sm">No data yet.</p>
+      {% endif %}
+    </div>
+
+    <!-- Discovery Sources -->
+    <div class="card p-6">
+      <h2 class="text-lg font-bold mb-4 text-gray-200">How We Found Your Music</h2>
+      {% if source_data %}
+        {% set max_source = source_data[0][1] if source_data else 1 %}
+        {% for source, count in source_data %}
+        <div class="mb-3">
+          <div class="flex justify-between text-sm mb-1">
+            <span class="text-gray-300">{{ source }}</span>
+            <span class="text-gray-500">{{ count }}</span>
+          </div>
+          <div class="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div class="h-full bg-purple-500 rounded-full" style="width: {{ (count / max_source * 100)|int }}%"></div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-gray-500 text-sm">Source data available on new playlists.</p>
+      {% endif %}
+    </div>
+
+    <!-- Track Types -->
+    <div class="card p-6">
+      <h2 class="text-lg font-bold mb-4 text-gray-200">Track Types</h2>
+      {% if type_data %}
+        <div class="space-y-3">
+        {% for track_type, count in type_data %}
+          <div class="flex items-center justify-between">
+            <span class="text-sm
+              {% if track_type == 'deep cut' %}text-amber-400
+              {% elif track_type == 'hidden gem' %}text-blue-400
+              {% elif track_type == 'surprise injection' %}text-purple-400
+              {% else %}text-green-400{% endif %}
+              capitalize">{{ track_type }}</span>
+            <span class="text-gray-500 text-sm">{{ count }}</span>
+          </div>
+        {% endfor %}
+        </div>
+      {% else %}
+        <p class="text-gray-500 text-sm">Track type data available on new playlists.</p>
+      {% endif %}
+    </div>
+
+  </div>
+
+  <div class="mt-8 text-center">
+    <a href="/dashboard" class="btn-green inline-block">Go Discover More</a>
+  </div>
+
+</div>
+
+{% endblock %}

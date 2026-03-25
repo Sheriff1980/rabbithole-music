@@ -107,17 +107,37 @@ def run_discovery_background(job_id, user_id, seed_type, access_token,
                                     progress_fn=progress_fn)
 
         set_progress(job_id, 70, "Matching tracks on Spotify...")
+
+        # Build provenance map: artist -> provenance dict from discovery
+        provenance_map = {}
         seen_artists = {}
         for d in discoveries:
             seen_artists.setdefault(d["artist"], []).append(d["track"])
+            if d["artist"].lower() not in provenance_map:
+                provenance_map[d["artist"].lower()] = d.get("provenance", {})
 
         artist_list = list(seen_artists.keys())[:target_artists]
         total_to_search = len(artist_list)
         found = []
         for i, artist_name in enumerate(artist_list):
             tracks = search_artist_tracks(sp, artist_name, count=3, deep_cuts=bool(deep_cuts))
+            # Attach provenance to each track
+            prov = provenance_map.get(artist_name.lower(), {})
+            for t in tracks:
+                t["provenance"] = dict(prov)  # copy so each track gets its own
+                # Classify track type based on popularity
+                pop = t.get("popularity", 50)
+                if pop < 25:
+                    t["provenance"]["track_type"] = "deep cut"
+                elif pop < 45:
+                    t["provenance"]["track_type"] = "hidden gem"
+                else:
+                    t["provenance"]["track_type"] = "popular pick"
+                # Mark surprise injections
+                src = t["provenance"].get("source", "")
+                if surprise_me and src in ("2nd-degree", "chart-injection", "adjacent-genre"):
+                    t["provenance"]["track_type"] = "surprise injection"
             found.extend(tracks)
-            # Update progress between 70-90% as we search Spotify
             if total_to_search > 0:
                 pct = 70 + int(20 * (i + 1) / total_to_search)
                 if i % 5 == 4 or i == total_to_search - 1:
@@ -129,10 +149,13 @@ def run_discovery_background(job_id, user_id, seed_type, access_token,
         if deep_cuts and seed_type.startswith("artist:"):
             seed_artist = seed_type[7:]
             own_deep = search_artist_tracks(sp, seed_artist, count=5, deep_cuts=True)
-            # Prepend seed artist's own deep cuts
             existing_uris = {t.get("uri") for t in found}
             for t in own_deep:
                 if t.get("uri") not in existing_uris:
+                    t["provenance"] = {"seed_artist": seed_artist, "degree": 0,
+                                       "source": "seed artist deep cut",
+                                       "genre": "", "tags": [],
+                                       "track_type": "deep cut"}
                     found.insert(0, t)
 
         # Final dedup pass across the entire playlist

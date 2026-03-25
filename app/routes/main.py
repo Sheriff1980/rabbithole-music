@@ -160,3 +160,64 @@ def history():
         })
 
     return render_template("history.html", playlists=playlists)
+
+
+@main_bp.route("/stats")
+def stats():
+    if "user_id" not in session:
+        return redirect(url_for("auth.login"))
+
+    with get_conn() as conn:
+        rows = conn.execute(text("""
+            SELECT track_data, seed_name, created_at
+            FROM playlists
+            WHERE owner_id=:uid AND status='done'
+            ORDER BY created_at DESC
+        """), {"uid": session["user_id"]}).fetchall()
+
+    # Aggregate stats
+    total_playlists = len(rows)
+    all_artists = set()
+    all_uris = set()
+    genre_counts = {}
+    source_counts = {}
+    track_type_counts = {}
+    top_artists = {}  # artist -> count of appearances
+
+    for track_data_raw, seed_name, created_at in rows:
+        try:
+            tracks = json.loads(track_data_raw)
+        except Exception:
+            continue
+        for t in tracks:
+            artist = t.get("artist", "").strip()
+            if artist:
+                all_artists.add(artist.lower())
+                top_artists[artist] = top_artists.get(artist, 0) + 1
+            if t.get("uri"):
+                all_uris.add(t["uri"])
+            prov = t.get("provenance", {})
+            if prov.get("genre") and prov["genre"] != "other":
+                g = prov["genre"]
+                genre_counts[g] = genre_counts.get(g, 0) + 1
+            if prov.get("source"):
+                s = prov["source"]
+                source_counts[s] = source_counts.get(s, 0) + 1
+            if prov.get("track_type"):
+                tt = prov["track_type"]
+                track_type_counts[tt] = track_type_counts.get(tt, 0) + 1
+
+    # Sort top artists by count
+    top_artists_sorted = sorted(top_artists.items(), key=lambda x: -x[1])[:15]
+    genre_sorted = sorted(genre_counts.items(), key=lambda x: -x[1])
+    source_sorted = sorted(source_counts.items(), key=lambda x: -x[1])
+    type_sorted = sorted(track_type_counts.items(), key=lambda x: -x[1])
+
+    return render_template("stats.html",
+                           total_playlists=total_playlists,
+                           total_artists=len(all_artists),
+                           total_tracks=len(all_uris),
+                           genre_data=genre_sorted,
+                           top_artists=top_artists_sorted,
+                           source_data=source_sorted,
+                           type_data=type_sorted)
