@@ -111,10 +111,17 @@ def run_discovery_background(job_id, user_id, seed_type, access_token,
         for d in discoveries:
             seen_artists.setdefault(d["artist"], []).append(d["track"])
 
+        artist_list = list(seen_artists.keys())[:target_artists]
+        total_to_search = len(artist_list)
         found = []
-        for artist_name in list(seen_artists.keys())[:target_artists]:
+        for i, artist_name in enumerate(artist_list):
             tracks = search_artist_tracks(sp, artist_name, count=3, deep_cuts=bool(deep_cuts))
             found.extend(tracks)
+            # Update progress between 70-90% as we search Spotify
+            if total_to_search > 0:
+                pct = 70 + int(20 * (i + 1) / total_to_search)
+                if i % 5 == 4 or i == total_to_search - 1:
+                    set_progress(job_id, pct, f"Found {len(found)} tracks ({i+1}/{total_to_search} artists)...")
             if len(found) >= playlist_size:
                 break
 

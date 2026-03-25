@@ -124,6 +124,8 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
 
     # ── Surprise Me: inject adjacent genre artists + random chart artists ───
     if surprise_me and sampled:
+        if progress_fn:
+            progress_fn(32, "Exploring adjacent genres...")
         # Get tags from the first few seed artists to find their genre families
         seed_genres = set()
         for artist in sampled[:5]:
@@ -131,15 +133,15 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
             genre = classify_genre(tags)
             if genre != "other":
                 seed_genres.add(genre)
-            time.sleep(0.1)
 
         # Find adjacent genres and inject artists from them
+        # Limit to 2 adjacent genres per seed genre to control API calls
         adjacent_artists = []
         for g in seed_genres:
-            for adj in ADJACENT_GENRES.get(g, []):
-                adj_artists = get_genre_seed_artists(adj, limit=10)
+            for adj in ADJACENT_GENRES.get(g, [])[:2]:
+                adj_artists = get_genre_seed_artists(adj, limit=8)
                 adjacent_artists.extend(adj_artists)
-                time.sleep(0.15)
+                time.sleep(0.1)
 
         # Add unique adjacent artists to the sample pool
         sampled_lower = {a.lower() for a in sampled}
@@ -163,12 +165,19 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
                     if injected >= 5:
                         break
 
-    # Breadth-first: take at most 2 suggestions from each seed artist
-    max_per_seed = 4 if surprise_me else 2
+    # Cap sampled pool to prevent runaway API calls
+    max_sample = 40 if surprise_me else sample_size
+    sampled = sampled[:max_sample]
+
+    if progress_fn:
+        progress_fn(35, f"Checking {len(sampled)} seed artists...")
+
+    # Breadth-first: take at most N suggestions from each seed artist
+    max_per_seed = 3 if surprise_me else 2
     candidates = []
     seen_candidates = set()
 
-    for artist in sampled:
+    for i, artist in enumerate(sampled):
         similar = get_similar_artists(artist, limit=similar_limit)
         added = 0
         for s in similar:
@@ -182,15 +191,17 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
             added += 1
             if added >= max_per_seed:
                 break
-        time.sleep(0.15)
+        # Only sleep every 3rd call — Last.fm allows 5 req/sec
+        if i % 3 == 2:
+            time.sleep(0.1)
 
     # ── Surprise Me: 2nd-degree expansion ──────────────────────────────────
     if surprise_me:
         if progress_fn:
-            progress_fn(45, "Going deeper... 2nd-degree artist expansion")
-        # Take top 20 candidates and find THEIR similar artists too
-        second_degree_seeds = candidates[:20]
-        for artist in second_degree_seeds:
+            progress_fn(45, "Going deeper... 2nd-degree expansion")
+        # Take top 12 candidates (not 20) for speed
+        second_degree_seeds = candidates[:12]
+        for i, artist in enumerate(second_degree_seeds):
             similar = get_similar_artists(artist, limit=5)
             for s in similar:
                 s_lower = s.lower()
@@ -198,16 +209,22 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
                     if s_lower not in voted_disliked:
                         candidates.append(s)
                         seen_candidates.add(s_lower)
-            time.sleep(0.15)
+            if i % 3 == 2:
+                time.sleep(0.1)
 
     # Shuffle so genre filtering doesn't always favour the same seed artists
     random.shuffle(candidates)
 
+    if progress_fn:
+        progress_fn(50, f"Filtering {len(candidates)} candidates by genre...")
+
     # Apply genre diversity cap + exclusions
+    # Cap how many candidates we'll tag to avoid slow loops
+    max_to_check = target_artists * 4  # check at most 4x what we need
     genre_counts = {}
     filtered = []
 
-    for artist_name in candidates:
+    for i, artist_name in enumerate(candidates[:max_to_check]):
         if len(filtered) >= target_artists:
             break
 
@@ -217,7 +234,9 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
 
         tags = get_artist_tags(artist_name)
         genre = classify_genre(tags)
-        time.sleep(0.1)
+        # Only sleep every 4th call
+        if i % 4 == 3:
+            time.sleep(0.1)
 
         # Skip explicitly excluded genres
         if genre in excluded_genres:
@@ -232,15 +251,19 @@ def run_discovery(liked_artists, liked_track_keys, target_artists=30, sample_siz
         genre_counts[genre] = genre_counts.get(genre, 0) + 1
         filtered.append(artist_name)
 
+    if progress_fn:
+        progress_fn(60, f"Getting tracks for {len(filtered)} artists...")
+
     # Get tracks for each filtered artist
     discoveries = []
-    for artist_name in filtered:
+    for i, artist_name in enumerate(filtered):
         tracks = get_top_tracks(artist_name, count=tracks_per_artist, deep_cuts=deep_cuts)
         for t in tracks:
             key = f"{artist_name.lower()} - {t.lower()}"
             if key not in liked_track_keys:
                 discoveries.append({"artist": artist_name, "track": t})
-        time.sleep(0.15)
+        if i % 3 == 2:
+            time.sleep(0.1)
 
     random.shuffle(discoveries)
     return discoveries
