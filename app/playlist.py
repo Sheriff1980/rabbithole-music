@@ -296,20 +296,68 @@ def search_track(sp, artist, track):
     except Exception:
         return None
 
+def _is_legit_cover(seed_name, cover_track_name):
+    """
+    Check if a cover track name is a legitimate cover of the seed song.
+    Much stricter than simple containment — prevents 'Time' matching
+    'Time After Time' or 'Time Warp'.
+    """
+    seed_norm = _normalize_track_name(seed_name)
+    cover_norm = _normalize_track_name(cover_track_name)
+
+    # Strip common cover suffixes to get the core title
+    import re
+    cover_core = re.sub(
+        r'\s*(cover|tribute|acoustic|live|version|originally\s+performed).*$',
+        '', cover_norm, flags=re.IGNORECASE
+    ).strip()
+
+    seed_words = seed_norm.split()
+    cover_words = cover_core.split()
+
+    # For very short titles (1 word like "Time", "Money", "Dogs"):
+    # require exact match or cover_core == seed_norm
+    if len(seed_words) == 1:
+        return cover_core == seed_norm or cover_norm == seed_norm
+
+    # For 2-word titles: require exact match or one side is fully contained
+    # with no extra content words (only filler like "a", "the" allowed)
+    if len(seed_words) == 2:
+        if seed_norm == cover_core:
+            return True
+        # Allow "wish you were here" to match "wish you were here cover"
+        # but not "wish you were here tonight"
+        if cover_core.startswith(seed_norm) or cover_core.endswith(seed_norm):
+            leftover = cover_core.replace(seed_norm, '').strip()
+            return len(leftover.split()) <= 1
+        return False
+
+    # For longer titles (3+ words): require 80% word overlap
+    if len(seed_words) >= 3:
+        overlap = len(set(seed_words) & set(cover_words))
+        return overlap / len(seed_words) >= 0.8
+
+    return False
+
+
 def search_covers(sp, artist_name, playlist_size=60, progress_fn=None):
     """
     Find cover versions of an artist's songs performed by OTHER artists.
     1. Get the seed artist's top tracks from Spotify
     2. For each track, search Spotify for '[track name] cover'
     3. Filter out the original artist
-    4. Return a list of cover track dicts with provenance
+    4. Cap at MAX_PER_SONG covers per original song for variety
+    5. Return a list of cover track dicts with provenance
     """
     import logging
     logger = logging.getLogger(__name__)
 
+    # Max covers of any single song — spread across the artist's catalog
+    MAX_PER_SONG = 3
+
     try:
-        # Get the seed artist's top tracks
-        results = sp.search(q=f"artist:{artist_name}", type="track", limit=30, market="US")
+        # Get the seed artist's top tracks — fetch more for variety
+        results = sp.search(q=f"artist:{artist_name}", type="track", limit=50, market="US")
         items = results["tracks"]["items"]
 
         # Filter to tracks by the actual artist and dedup
@@ -324,7 +372,7 @@ def search_covers(sp, artist_name, playlist_size=60, progress_fn=None):
             if norm not in seen_names:
                 seen_names.add(norm)
                 seed_tracks.append({"name": t["name"], "artist": t["artists"][0]["name"]})
-            if len(seed_tracks) >= 20:
+            if len(seed_tracks) >= 30:
                 break
 
         if not seed_tracks:
@@ -337,73 +385,74 @@ def search_covers(sp, artist_name, playlist_size=60, progress_fn=None):
         # Search for covers of each track
         found = []
         seen_uris = set()
+        seen_cover_artists = {}  # artist_lower -> count (cap same cover artist)
+        song_cover_counts = {}   # seed_norm -> count of covers found
         total = len(seed_tracks)
 
         for i, seed in enumerate(seed_tracks):
             if len(found) >= playlist_size:
                 break
 
-            # Search strategies — try multiple queries for better results
-            queries = [
-                f'"{seed["name"]}" cover',
-                f'{seed["name"]} cover',
-            ]
+            seed_norm = _normalize_track_name(seed["name"])
 
-            for q in queries:
+            # Skip this song if we already have enough covers of it
+            if song_cover_counts.get(seed_norm, 0) >= MAX_PER_SONG:
+                continue
+
+            # Use exact-phrase search for better precision
+            q = f'"{seed["name"]}" cover'
+            try:
+                cover_results = sp.search(q=q, type="track", limit=15, market="US")
+                cover_items = cover_results["tracks"]["items"]
+            except Exception:
+                continue
+
+            for t in cover_items:
                 if len(found) >= playlist_size:
                     break
-                try:
-                    cover_results = sp.search(q=q, type="track", limit=20, market="US")
-                    cover_items = cover_results["tracks"]["items"]
-                except Exception:
+                if song_cover_counts.get(seed_norm, 0) >= MAX_PER_SONG:
+                    break
+
+                cover_artist = t["artists"][0]["name"].lower()
+
+                # Skip the original artist
+                if artist_lower in cover_artist or cover_artist in artist_lower:
                     continue
 
-                for t in cover_items:
-                    if len(found) >= playlist_size:
-                        break
+                uri = t["uri"]
+                if uri in seen_uris:
+                    continue
 
-                    cover_artist = t["artists"][0]["name"].lower()
+                # Strict name matching — prevents "Time" → "Time After Time"
+                if not _is_legit_cover(seed["name"], t["name"]):
+                    continue
 
-                    # Skip the original artist
-                    if artist_lower in cover_artist or cover_artist in artist_lower:
-                        continue
+                # Don't let one cover artist dominate the playlist
+                if seen_cover_artists.get(cover_artist, 0) >= 2:
+                    continue
 
-                    uri = t["uri"]
-                    if uri in seen_uris:
-                        continue
-                    seen_uris.add(uri)
+                seen_uris.add(uri)
+                seen_cover_artists[cover_artist] = seen_cover_artists.get(cover_artist, 0) + 1
+                song_cover_counts[seed_norm] = song_cover_counts.get(seed_norm, 0) + 1
 
-                    # Check the track name actually resembles the original
-                    cover_norm = _normalize_track_name(t["name"])
-                    seed_norm = _normalize_track_name(seed["name"])
-                    # The cover should contain the original song name (or vice versa)
-                    if seed_norm not in cover_norm and cover_norm not in seed_norm:
-                        # Looser check — at least 60% of words match
-                        seed_words = set(seed_norm.split())
-                        cover_words = set(cover_norm.split())
-                        if len(seed_words) > 0:
-                            overlap = len(seed_words & cover_words) / len(seed_words)
-                            if overlap < 0.6:
-                                continue
-
-                    found.append({
-                        "uri": uri,
-                        "name": t["name"],
-                        "artist": t["artists"][0]["name"],
-                        "album": t["album"]["name"],
-                        "album_art": t["album"]["images"][1]["url"] if len(t["album"]["images"]) > 1 else None,
-                        "preview_url": t.get("preview_url"),
-                        "popularity": t.get("popularity", 50),
-                        "provenance": {
-                            "seed_artist": artist_name,
-                            "degree": 0,
-                            "source": "cover",
-                            "genre": "",
-                            "tags": [],
-                            "track_type": "cover",
-                            "original_song": seed["name"],
-                        }
-                    })
+                found.append({
+                    "uri": uri,
+                    "name": t["name"],
+                    "artist": t["artists"][0]["name"],
+                    "album": t["album"]["name"],
+                    "album_art": t["album"]["images"][1]["url"] if len(t["album"]["images"]) > 1 else None,
+                    "preview_url": t.get("preview_url"),
+                    "popularity": t.get("popularity", 50),
+                    "provenance": {
+                        "seed_artist": artist_name,
+                        "degree": 0,
+                        "source": "cover",
+                        "genre": "",
+                        "tags": [],
+                        "track_type": "cover",
+                        "original_song": seed["name"],
+                    }
+                })
 
             if progress_fn and total > 0:
                 pct = 35 + int(55 * (i + 1) / total)
