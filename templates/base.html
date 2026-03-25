@@ -37,8 +37,7 @@
     .btn-kofi:hover { background: #ff7370; transform: scale(1.04); }
     .btn-kofi svg { flex-shrink: 0; }
     .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-    .feat-song:hover .feat-play-icon:not(.hidden) { opacity: 1 !important; }
-    .feat-pause-icon.opacity-100 { opacity: 1 !important; }
+    .feat-song:hover .absolute { opacity: 1 !important; }
   </style>
   <!-- CSRF token — read by the fetch interceptor below -->
   <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -112,20 +111,17 @@
         <p class="text-gray-400 text-xs line-clamp-1">{{ featured_artist.bio }}</p>
         {% endif %}
       </div>
-      <!-- Songs (with inline preview playback) -->
+      <!-- Songs (click to play via Spotify embed) -->
       <div class="hidden md:flex items-center gap-3 flex-shrink-0">
         {% for song in featured_artist.songs[:3] %}
-        <button type="button" onclick="playFeaturedPreview(this, '{{ song.preview_url or '' }}')"
+        <button type="button" onclick="toggleFeaturedEmbed('{{ song.spotify_uri.split(':')[-1] if song.spotify_uri else '' }}')"
                 class="feat-song flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 hover:bg-white/10 transition cursor-pointer border-0 outline-none"
-                title="{{ song.name }}">
+                title="Preview {{ song.name }}">
           {% if song.album_art %}
           <div class="relative w-7 h-7 flex-shrink-0">
             <img src="{{ song.album_art }}" class="w-7 h-7 rounded-sm">
-            <div class="feat-play-icon absolute inset-0 flex items-center justify-center bg-black/40 rounded-sm opacity-0 transition-opacity">
+            <div class="absolute inset-0 flex items-center justify-center bg-black/40 rounded-sm opacity-0 hover:opacity-100 transition-opacity">
               <svg class="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-            </div>
-            <div class="feat-pause-icon absolute inset-0 flex items-center justify-center bg-black/40 rounded-sm opacity-0 transition-opacity hidden">
-              <svg class="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
             </div>
           </div>
           {% endif %}
@@ -135,8 +131,13 @@
         </button>
         {% endfor %}
       </div>
-      <!-- Hidden audio element for featured preview -->
-      <audio id="feat-audio" preload="none"></audio>
+      <!-- Spotify embed player (hidden until a song is clicked) -->
+      <div id="feat-embed-wrap" class="hidden absolute left-1/2 -translate-x-1/2 bottom-0 translate-y-full z-50 shadow-2xl rounded-xl overflow-hidden"
+           style="width:352px;">
+        <iframe id="feat-embed" src="" width="352" height="152" frameborder="0"
+                allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                loading="lazy" style="border-radius:12px; background:#000;"></iframe>
+      </div>
       <!-- Spotify link -->
       {% if featured_artist.uri %}
       <a href="https://open.spotify.com/artist/{{ featured_artist.uri.split(':')[-1] }}" target="_blank" rel="noopener"
@@ -153,72 +154,37 @@
   </main>
 
   <script>
-    // ── Featured Artist inline preview player ──
-    var _featAudio = null;
-    var _featActive = null;
+    // ── Featured Artist embed player ──
+    var _featCurrentTrack = null;
 
-    function playFeaturedPreview(btn, url) {
-      if (!_featAudio) _featAudio = document.getElementById('feat-audio');
-      if (!url) return;
+    function toggleFeaturedEmbed(trackId) {
+      if (!trackId) return;
+      var wrap = document.getElementById('feat-embed-wrap');
+      var iframe = document.getElementById('feat-embed');
 
-      // If clicking the same song that's playing, toggle pause
-      if (_featActive === btn && !_featAudio.paused) {
-        _featAudio.pause();
-        _featShowState(btn, 'play');
+      // If same track clicked, toggle visibility
+      if (_featCurrentTrack === trackId && !wrap.classList.contains('hidden')) {
+        wrap.classList.add('hidden');
+        iframe.src = '';
+        _featCurrentTrack = null;
         return;
       }
 
-      // Stop any currently playing song
-      if (_featActive && _featActive !== btn) {
-        _featShowState(_featActive, 'play');
-      }
-
-      _featActive = btn;
-      _featAudio.src = url;
-      _featAudio.volume = 0.5;
-      _featAudio.play();
-      _featShowState(btn, 'pause');
-
-      // When clip ends, reset icon
-      _featAudio.onended = function() {
-        _featShowState(btn, 'play');
-        _featActive = null;
-      };
+      // Load new track
+      _featCurrentTrack = trackId;
+      iframe.src = 'https://open.spotify.com/embed/track/' + trackId + '?utm_source=generator&theme=0';
+      wrap.classList.remove('hidden');
     }
 
-    function _featShowState(btn, state) {
-      var playIcon = btn.querySelector('.feat-play-icon');
-      var pauseIcon = btn.querySelector('.feat-pause-icon');
-      if (!playIcon || !pauseIcon) return;
-      if (state === 'pause') {
-        // Song is playing — show pause icon
-        playIcon.classList.add('hidden');
-        playIcon.classList.remove('opacity-100');
-        pauseIcon.classList.remove('hidden');
-        pauseIcon.classList.add('opacity-100');
-      } else {
-        // Song is paused/stopped — show play icon on hover
-        pauseIcon.classList.add('hidden');
-        pauseIcon.classList.remove('opacity-100');
-        playIcon.classList.remove('hidden');
-        playIcon.classList.remove('opacity-100');
+    // Close embed when clicking outside
+    document.addEventListener('click', function(e) {
+      var wrap = document.getElementById('feat-embed-wrap');
+      if (!wrap || wrap.classList.contains('hidden')) return;
+      if (!e.target.closest('#feat-embed-wrap') && !e.target.closest('.feat-song')) {
+        wrap.classList.add('hidden');
+        document.getElementById('feat-embed').src = '';
+        _featCurrentTrack = null;
       }
-    }
-
-    // Show play icon on hover for song buttons
-    document.querySelectorAll('.feat-song').forEach(function(btn) {
-      btn.addEventListener('mouseenter', function() {
-        if (_featActive !== btn || (_featAudio && _featAudio.paused)) {
-          var pi = btn.querySelector('.feat-play-icon');
-          if (pi && !pi.classList.contains('hidden')) pi.classList.add('opacity-100');
-        }
-      });
-      btn.addEventListener('mouseleave', function() {
-        if (_featActive !== btn || (_featAudio && _featAudio.paused)) {
-          var pi = btn.querySelector('.feat-play-icon');
-          if (pi) pi.classList.remove('opacity-100');
-        }
-      });
     });
 
     // Global fetch interceptor — automatically attaches the CSRF token to every
